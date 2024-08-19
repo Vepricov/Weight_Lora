@@ -1,4 +1,4 @@
-#!/home/andreisemenov/Veprikov/Sber_Lora/VeprVenv/bin/python
+#!/home/shkodnik/Sber_Lora/VeprVenv/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys
