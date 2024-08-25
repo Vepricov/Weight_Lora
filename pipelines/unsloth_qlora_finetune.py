@@ -29,15 +29,15 @@ class TrainingArguments(TrainingArguments):
     fp16: bool = not is_bfloat16_supported()
     bf16: bool = is_bfloat16_supported()
     logging_steps: int = 1
-    optim: str = "adamw_8bit"
+    optim: str = "adamw_hf"
     weight_decay: float = 0.01
     lr_scheduler_type: str = "linear"
     seed: int = 18
     output_dir: str = "train_outputs"
     # output_dir: str = None
     device_no = 0
-    max_steps: int = 1
-    report_to: str = "none" # "none" or "wandb"
+    max_steps: int = 50
+    report_to: str = "wandb" # "none" or "wandb"
 
  
 @dataclass
