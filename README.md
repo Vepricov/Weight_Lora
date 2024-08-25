@@ -43,13 +43,13 @@ pip install -r requirements.txt
 
 ## Usage
 ### Train Scripts
-Up to this point, experiments were based on either llama3-8b-instruct and llama3.1-8b-instruct
+Up to this point, experiments were based on Meta-Llama-3.1-8B from unsloth library (see https://huggingface.co/unsloth/Meta-Llama-3.1-8B)
 
-To implement training pipeline, use these scripts in following order (check out non-default arguments in all scripts):
 1. SFT
 QLORA finetune training:
 
 ```bash
-# CUDA_VISIBLE_DEVICES -- to select a specific GPU on the server (on MIPT server number 2 is A100)
+# CUDA_VISIBLE_DEVICES -- to select a specific GPU on the server 
+# P.S. on MIPT server number 2 is A100
 CUDA_VISIBLE_DEVICES=2 python pipelines/unsloth_qlora_finetune.py
 ```
