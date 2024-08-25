@@ -33,8 +33,8 @@ class TrainingArguments(TrainingArguments):
     weight_decay: float = 0.01
     lr_scheduler_type: str = "linear"
     seed: int = 18
-    #output_dir: str = "/media/ssd-5t/eshevtsova/sft/llama31-fp-math-dial-v2-user-context"
-    output_dir: str = "test_output"
+    output_dir: str = "train_outputs"
+    # output_dir: str = None
     device_no = 0
     max_steps: int = 1
     report_to: str = "none" # "none" or "wandb"
@@ -137,10 +137,10 @@ def main():
             weight_decay=training_args.weight_decay,
             lr_scheduler_type=training_args.lr_scheduler_type,
             seed=training_args.seed,
-            # output_dir=training_args.output_dir,
-            output_dir=training_args.optim,
+            output_dir=training_args.output_dir,
             max_steps=training_args.max_steps,
-            report_to=training_args.report_to
+            report_to=training_args.report_to,
+            run_name=training_args.optim
         ),
     )
 
