@@ -1,4 +1,4 @@
-# ``Wandb`` project: 
+### ``Wandb`` project: 
 https://wandb.ai/shkodnik-mipt/SBER_LORA?nw=nwusershkodnik
 
 # Math Tutor project
@@ -46,10 +46,10 @@ pip install -r requirements.txt
 Up to this point, experiments were based on Meta-Llama-3.1-8B from unsloth library (see https://huggingface.co/unsloth/Meta-Llama-3.1-8B)
 
 1. SFT
-QLORA finetune training:
+QLORA finetune training (approximately 50GB of GPU memory):
 
 ```bash
 # CUDA_VISIBLE_DEVICES -- to select a specific GPU on the server 
-# P.S. on MIPT server number 2 is A100
+# P.S. on MIPT server number 2 is A100 with max memory 80GB
 CUDA_VISIBLE_DEVICES=2 python pipelines/unsloth_qlora_finetune.py
 ```

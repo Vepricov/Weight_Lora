@@ -25,17 +25,16 @@ class TrainingArguments(TrainingArguments):
     gradient_accumulation_steps: int = 4
     warmup_steps: int = 5
     num_train_epochs: int = 5
-    learning_rate: float = 5e-4
+    learning_rate: float = 5e-5
     fp16: bool = not is_bfloat16_supported()
     bf16: bool = is_bfloat16_supported()
     logging_steps: int = 1
-    optim: str = "adamw_hf"
+    optim: str = "rmsprop"
     weight_decay: float = 0.01
     lr_scheduler_type: str = "linear"
     seed: int = 18
     output_dir: str = "train_outputs"
     # output_dir: str = None
-    device_no = 0
     max_steps: int = 50
     report_to: str = "wandb" # "none" or "wandb"
 
@@ -56,33 +55,18 @@ def set_seed(seed): # ставит сид
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-
-def set_device(device_no: int): # выбирает GPU-шку и выводит название
-    os.environ["CUDA_DEVICE_ORDER"]='PCI_BUS_ID'
-    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = 'false'
-    if torch.cuda.is_available():
-        device = torch.device(f"cuda:{device_no}")
-        print("There are %d GPU(s) available." % torch.cuda.device_count())
-        print("We will use the GPU:", torch.cuda.get_device_name(device_no))
-    else:
-        print("No GPU available, using the CPU instead.")
-        device = torch.device("cpu")
-
-    return device 
  
 def main():
     parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
     model_args, training_args, data_args = parser.parse_args_into_dataclasses()
 
     set_seed(training_args.seed)
-    device = set_device(training_args.device_no)
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=model_args.model_name,
         max_seq_length=model_args.max_seq_length,
         dtype=model_args.dtype,
-        load_in_4bit=model_args.load_in_4bit,
-        device_map=device
+        load_in_4bit=model_args.load_in_4bit
     )
 
     model = FastLanguageModel.get_peft_model(
