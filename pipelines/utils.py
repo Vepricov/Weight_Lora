@@ -1,41 +1,8 @@
-import torch.optim as optim
-from typing import Callable
+import json
+import random
 import torch
-import torch.nn as nn
 import numpy as np
-
-class StoIHT(optim.Optimizer):
-  def __init__(self, params, k, approx, proj, prob, lr=0.01):
-    if lr < 0.0:
-      raise ValueError("Invalid learning rate: {}".format(lr))
-    defaults = dict(lr=lr, approx=approx, proj=proj, k=k, prob=prob)
-    super(StoIHT, self).__init__(params, defaults)
-
-  def step(self, closure: Callable = None):
-    loss = None
-    if closure is not None:
-      loss = closure()
-    for group in self.param_groups:
-      for p in group['params']:
-        if p.grad is None:
-          continue
-        d_p = p.grad.data
-        b_t = p.data - group['lr'] * d_p
-        if np.random.random() < group['prob']:
-          Gamma_t = group['approx'](b_t, group['k'])
-          p.data = group['proj'](b_t, Gamma_t)
-        else:
-           p.data = b_t
-    return loss
-
-def approx_0(x, k):
-  if len(x.shape) == 2:
-    x_long = x.reshape(-1)
-    idxs = torch.sort(x_long, descending=True).indices[:k]
-    mask = torch.zeros_like(x_long, dtype=torch.float32)
-    for i in idxs:
-      mask[i] = 1.
-    return mask.reshape(x.shape)
+import torch.nn as nn
 
 def proj_0(x, mask):
   return x.mul(mask)
@@ -71,3 +38,15 @@ def print_trainable_parameters(model):
         f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}"
     )
 
+def load_and_transform_jsonl(input_file):
+    with open(input_file, 'r', encoding='utf-8') as f:
+        data = [json.loads(line) for line in f]
+
+    transformed_data = [{"chat": item["chat"]} for item in data]
+    return transformed_data
+
+def set_seed(seed): # ставит сид
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
