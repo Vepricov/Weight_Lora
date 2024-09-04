@@ -3,6 +3,7 @@ accelerate==0.29.2
 aiohttp==3.9.5
 bert_score==0.3.13
 bitsandbytes==0.43.1
+dadaptation==3.2
 datasets==2.19.0
 fastapi==0.111.0
 fire==0.6.0
@@ -15,6 +16,7 @@ numpy==1.26.4
 packaging==24.1
 pandas==2.2.2
 peft==0.10.0
+prodigyopt==1.0
 pydantic==2.7.4
 python-dotenv==1.0.1
 rouge_score==0.1.2

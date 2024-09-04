@@ -1,5 +1,6 @@
 import os
-import torch_optimizer
+# import torch_optimizer
+import torch
 from unsloth import FastLanguageModel
 from unsloth.chat_templates import get_chat_template
 from unsloth import is_bfloat16_supported
@@ -29,16 +30,18 @@ class TrainingArguments(TrainingArguments):
     gradient_accumulation_steps: int = 4
     warmup_steps: int = 5
     num_train_epochs: int = 5
-    learning_rate: float = 5e-5
+    learning_rate: float = 1e-1
     fp16: bool = not is_bfloat16_supported()
     bf16: bool = is_bfloat16_supported()
     logging_steps: int = 1
-    # optim: str = "rmsprop"
+    optim: str = "adamw_hf"
     weight_decay: float = 0.01
     lr_scheduler_type: str = "linear"
     seed: int = 18
     output_dir: str = "train_outputs"
     # output_dir: str = None
+    sign_step: int = 5000
+    max_grad_norm: float = 1.0
     max_steps: int = 50 # overrides num_train_epochs
     report_to: str = "wandb" # "none" or "wandb"
  
@@ -47,8 +50,11 @@ class DataArguments:
     train_file: str = 'data/train_ft_short_system.jsonl'
  
 def main():
-    parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
-    model_args, training_args, data_args = parser.parse_args_into_dataclasses()
+    # parser = HfArgumentParser((ModelArguments, TrainingArguments, DataArguments))
+    # model_args, training_args, data_args = parser.parse_args_into_dataclasses()
+    model_args = ModelArguments
+    training_args = TrainingArguments
+    data_args = DataArguments
 
     utils.set_seed(training_args.seed)
 
@@ -89,15 +95,28 @@ def main():
     
     dataset = train_dataset.map(formatting_prompts_func, batched=True)
 
+    optimizer, scheduler = None, None
     ######################### Optimizer and Scheduler ##########################
-    optimizer = optimizers.signAdamW(model.parameters(), 
-                                     lr=training_args.learning_rate,
-                                     weight_decay=training_args.weight_decay)
-    scheduler = get_scheduler(name=training_args.lr_scheduler_type, 
-                              optimizer=optimizer, 
-                              num_warmup_steps=training_args.warmup_steps,
-                              num_training_steps=training_args.max_steps)
+    # optimizer = optimizers.signAdamW(model.parameters(), 
+    #                                  lr=training_args.learning_rate,
+    #                                  weight_decay=training_args.weight_decay)
+    # scheduler = get_scheduler(name=training_args.lr_scheduler_type, 
+    #                           optimizer=optimizer, 
+    #                           num_warmup_steps=training_args.warmup_steps,
+    #                           num_training_steps=training_args.max_steps)
+    import dadaptation
+    optimizer = dadaptation.DAdaptAdam(model.parameters(), 
+                                       lr=training_args.learning_rate,
+                                       weight_decay=training_args.weight_decay)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 
+                                                           T_max=training_args.max_steps)
     ############################################################################
+
+    if training_args.report_to == "wandb":
+        if optimizer is not None:
+            run_name=optimizer.__class__.__name__
+        else:
+            run_name=training_args.optim
     
     os.environ["WANDB_PROJECT"] = "SBER_LORA"
     trainer = SFTTrainer(
@@ -117,19 +136,33 @@ def main():
             fp16=training_args.fp16,
             bf16=training_args.bf16,
             logging_steps=training_args.logging_steps,
-            # optim=optimizer.__class__.__name__,
+            optim=training_args.optim,
             weight_decay=training_args.weight_decay,
             lr_scheduler_type=training_args.lr_scheduler_type,
             seed=training_args.seed,
             output_dir=training_args.output_dir,
             max_steps=training_args.max_steps,
             report_to=training_args.report_to,
-            run_name=optimizer.__class__.__name__
+            run_name=run_name,
+            max_grad_norm=training_args.max_grad_norm
         ),
         optimizers=[optimizer, scheduler]
     )
 
     trainer_stats = trainer.train()
+
+    if training_args.report_to == "wandb":
+        import wandb
+        if optimizer is not None:
+            add_wandb_config = {"optimizer" : optimizer.__class__.__name__,
+                                "scheduler" : scheduler.__class__.__name__,
+                                }
+        else:
+            add_wandb_config = {"optimizer" : training_args.optim,
+                                "scheduler" : training_args.lr_scheduler_type,
+                                }
+
+        wandb.config.update(add_wandb_config)
 
 if __name__ == "__main__":
     main()
