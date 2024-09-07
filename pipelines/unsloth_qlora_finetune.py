@@ -42,8 +42,8 @@ class TrainingArguments(TrainingArguments):
     # output_dir: str = None
     sign_step: int = 5000
     max_grad_norm: float = 1.0
-    max_steps: int = 50 # overrides num_train_epochs
-    report_to: str = "wandb" # "none" or "wandb"
+    max_steps: int = 2 # overrides num_train_epochs
+    report_to: str = "none" # "none" or "wandb"
  
 @dataclass
 class DataArguments:
@@ -112,6 +112,7 @@ def main():
                                                            T_max=training_args.max_steps)
     ############################################################################
 
+    run_name = None
     if training_args.report_to == "wandb":
         if optimizer is not None:
             run_name=optimizer.__class__.__name__
