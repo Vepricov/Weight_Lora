@@ -192,9 +192,11 @@ class AdamW(optim.Optimizer):
             loss = closure()
 
         for group in self.param_groups:
+            summ = 0
             for p in group["params"]:
                 if p.grad is None:
                     continue
+                summ += 1
                 grad = p.grad
                 if grad.is_sparse:
                     raise RuntimeError("Adam does not support sparse gradients, please consider SparseAdam instead")
@@ -238,6 +240,7 @@ class AdamW(optim.Optimizer):
                 # Add weight decay at the end (fixed version)
                 if group["weight_decay"] > 0.0:
                     p.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
+            print(summ)
 
         return loss
 

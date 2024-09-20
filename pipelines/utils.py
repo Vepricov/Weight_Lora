@@ -1,29 +1,12 @@
 import json
 import random
 import torch
+import datasets
 import numpy as np
-import torch.nn as nn
 
 def proj_0(x, mask):
   return x.mul(mask)
 
-class AdapterLayer(nn.Module):
-    """Wraps a linear layer with LoRA-like adapter. Wraps an existing OPT linear layer"""
-    def __init__(self, module: nn.Linear):
-        super().__init__()
-        self.module = module  # pre-trained (frozen) linear layer
-        self.adapter = nn.Linear(in_features=module.in_features,
-                                 out_features=module.out_features,
-                                 bias=False)
-        # nn.init.kaiming_uniform_(self.adapter_A, a=5 ** 0.5)
-        #self.adapter_B = nn.Parameter(torch.zeros(rank, module.out_features, device=module.weight.device))
-
-    def forward(self, x):
-        # Apply self.module and LoRA adapter, return the sum (self.module outputs + adapter outputs)
-        frwd_module = self.module(x)
-        frwd_adapter = self.adapter(x)
-        return frwd_module + frwd_adapter
-    
 def print_trainable_parameters(model):
     """
     Prints the number of trainable parameters in the model.
@@ -50,3 +33,28 @@ def set_seed(seed): # ставит сид
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+def set_device(device_no: int): # выбирает GPU-шку и выводит название
+    if torch.cuda.is_available():
+        device = torch.device(f"cuda:{device_no}")
+        print("There are %d GPU(s) available." % torch.cuda.device_count())
+        print("We will use the GPU:", torch.cuda.get_device_name(device_no))
+    else:
+        print("No GPU available, using the CPU instead.")
+        device = torch.device("cpu")
+
+    return device
+
+def make_mlm_dataset_form_mmlu(dataset):
+    dataset_list = []
+    for a in dataset:
+        q = a['question']
+        q = q.replace('_', '')
+        q += ' ' + a['choices'][a['answer']]
+        q = q.replace('.', '')
+        q = q.replace('  ', ' ')
+        q += '.'
+        dataset_list.append({"text" : q})
+
+    return_dataset = datasets.Dataset.from_list(dataset_list)
+    return return_dataset
