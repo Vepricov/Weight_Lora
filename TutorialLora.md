@@ -39,7 +39,7 @@ pip install --upgrade  ./peft
 6. Потом надо чтобы у вас работал следующий код:
 ```python
 from peft import MyLoraConfig, get_peft_model
-my_lora_config = LoraConfig(...)
+my_lora_config = MyLoraConfig(...)
 model = get_peft_model(mode, my_lora_config)
 ```
 
