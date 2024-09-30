@@ -113,13 +113,26 @@ class WeightLoraLayer(nn.Module, LycorisLayer):
 
     def get_delta_weight(self, adapter_name: str) -> torch.Tensor:
         # https://github.com/KohakuBlueleaf/LyCORIS/blob/e4259b870d3354a9615a96be61cb5d07455c58ea/lycoris/modules/lokr.py#L224
+        device = self.weight_lora_B[adapter_name].device
+        dtype = self.weight_lora_B[adapter_name].dtype
         w_A = self.weight_lora_A[adapter_name]
         w_B = self.weight_lora_B[adapter_name]
         w = self.weight_lora_w[adapter_name]
 
+        cast_to_fp32 = device.type == "cpu" and (dtype == torch.float16 or dtype == torch.bfloat16)
+        if cast_to_fp32:
+            w_A = w_A.float()
+            w_B = w_B.float()
+
         # Combine marixes
         weight = w * w_A @ w_B * self.scaling[adapter_name]
         weight = weight.T
+        if cast_to_fp32:
+            weight = weight.to(dtype=dtype)
+
+            # cast back the weights
+            self.lora_A[adapter_name].weight.data = w_A.to(dtype)
+            self.lora_B[adapter_name].weight.data = w_B.to(dtype)
         # print(self.get_base_layer().weight.shape, type(self.get_base_layer()))
         # weight = weight.reshape(self.get_base_layer().weight.shape)
 
@@ -186,6 +199,8 @@ class Linear(WeightLoraLayer):
     ) -> torch.Tensor:
         delta_weight = self.get_delta_weight(adapter_name)
         # don't add bias here, because the bias is already included in the output of the base_layer
+        # print(input.weight.shape(), delta_weight.weight.shape(), end="-----------\n")
+        delta_weight = delta_weight.to(input.dtype)
         return F.linear(input, delta_weight)
 
     def __repr__(self) -> str:

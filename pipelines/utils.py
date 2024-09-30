@@ -4,9 +4,6 @@ import torch
 import datasets
 import numpy as np
 
-def proj_0(x, mask):
-  return x.mul(mask)
-
 def print_trainable_parameters(model):
     """
     Prints the number of trainable parameters in the model.
