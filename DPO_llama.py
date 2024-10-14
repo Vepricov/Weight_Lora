@@ -24,7 +24,7 @@ from trl import ORPOConfig, ORPOTrainer, setup_chat_format
 try:
     import adapters
     import optimizers
-    import utils
+    import src.utils as utils
 except ModuleNotFoundError:
     import pipelines.adapters as adapters
     import pipelines.optimizers as optimizers
