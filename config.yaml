@@ -11,15 +11,16 @@ bf16: false
 num_ths: 5
 val_ds_size: 128
 val_ds_seed: 18
+max_steps: 512
 loader_config:
   num_proc: ${num_ths}
 tokenizer_config:
   padding_side: left
 adapter_config:
+  ft_strategy: ADALoRA
   peft_pretrained: false
   peft_is_trainable: true
   peft_pretrained_path: ./train_outputs
-  ft_strategy: LoRA
   target_modules:
   - q_proj
   - k_proj
@@ -32,6 +33,23 @@ adapter_config:
     r: 16
     lora_alpha: 32
     lora_dropout: 0.05
+    target_modules: ${adapter_config.target_modules}
+  LoKR_config:
+    r: 16
+    lora_alpha: 32
+    module_dropout: 0.05
+    target_modules: ${adapter_config.target_modules}
+  LoHA_config:
+    r: 8
+    lora_alpha: 32
+    module_dropout: 0.05
+    target_modules: ${adapter_config.target_modules}
+  VERA_config:
+    r: 16
+    vera_dropout: 0.05
+    target_modules: ${adapter_config.target_modules}
+  ADALoRA_config:
+    target_r: 32
     target_modules: ${adapter_config.target_modules}
   BOFT_config:
     boft_block_size: 8
@@ -52,8 +70,8 @@ trainer_config:
   fp16: ${fp16}
   bf16: ${bf16}
   full_determinism: false
-  per_device_train_batch_size: 4
-  per_device_eval_batch_size: 4
+  per_device_train_batch_size: 3
+  per_device_eval_batch_size: 3
   gradient_accumulation_steps: 6
   lr_scheduler_type: cosine_with_restarts
   lr_scheduler_kwargs:
@@ -63,12 +81,12 @@ trainer_config:
   weight_decay: 0.01
   dataloader_num_workers: ${num_ths}
   eval_strategy: steps
-  eval_steps: 16
+  eval_steps: 32
   logging_steps: 1
   load_best_model_at_end: true
   seed: 18
   data_seed: 18
   report_to: wandb # none or wandb
   save_strategy: steps
-  save_steps: 1024
-  max_steps: 2048
+  save_steps: 256
+  max_steps: ${max_steps}

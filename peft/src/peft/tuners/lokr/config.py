@@ -16,18 +16,19 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Union
 
 from peft.tuners.lycoris_utils import LycorisConfig
+from peft.tuners.lora import LoraConfig
 from peft.utils import PeftType
 
 
 @dataclass
-class LoKrConfig(LycorisConfig):
+class LoKrConfig(LoraConfig):
     """
     Configuration class of [`LoKrModel`].
 
     Args:
         r (`int`):
             LoKr rank.
-        alpha (`int`):
+        lora_alpha (`int`):
             The alpha parameter for LoKr scaling.
         rank_dropout (`float`):
             The dropout probability for rank dimension during training.
@@ -67,7 +68,7 @@ class LoKrConfig(LycorisConfig):
     """
 
     r: int = field(default=8, metadata={"help": "LoKr rank"})
-    alpha: int = field(default=8, metadata={"help": "LoKr alpha"})
+    lora_alpha: int = field(default=8, metadata={"help": "LoKr alpha"})
     rank_dropout: float = field(
         default=0.0, metadata={"help": "The dropout probability for rank dimension during training"}
     )

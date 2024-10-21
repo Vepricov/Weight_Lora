@@ -130,7 +130,7 @@ class LoKrLayer(nn.Module, LycorisLayer):
         self,
         adapter_name: str,
         r: int,
-        alpha: float,
+        lora_alpha: float,
         rank_dropout: float,
         module_dropout: float,
         init_weights: bool,
@@ -144,7 +144,7 @@ class LoKrLayer(nn.Module, LycorisLayer):
         Args:
             adapter_name (`str`): Name for the adapter to add.
             r (`int`): Rank for the added adapter.
-            alpha (`float`): Alpha for the added adapter.
+            lora_alpha (`float`): Alpha for the added adapter.
             rank_dropout (`float`): The dropout probability for rank dimension during training
             module_dropout (`float`): The dropout probability for disabling adapter during training.
             init_weights (`bool`): Whether to initialize adapter weights.
@@ -156,8 +156,8 @@ class LoKrLayer(nn.Module, LycorisLayer):
             raise ValueError(f"`r` should be a positive integer value but the value passed is {r}")
 
         self.r[adapter_name] = r
-        self.alpha[adapter_name] = alpha
-        self.scaling[adapter_name] = alpha / r
+        self.lora_alpha[adapter_name] = lora_alpha
+        self.scaling[adapter_name] = lora_alpha / r
         self.rank_dropout[adapter_name] = rank_dropout
         self.module_dropout[adapter_name] = module_dropout
         base_layer = self.get_base_layer()
@@ -265,7 +265,7 @@ class Linear(LoKrLayer):
         dtype: Optional[torch.dtype] = None,
         adapter_name: str = "default",
         r: int = 0,
-        alpha: float = 0.0,
+        lora_alpha: float = 0.0,
         rank_dropout: float = 0.0,
         module_dropout: float = 0.0,
         init_weights: bool = True,
@@ -275,7 +275,7 @@ class Linear(LoKrLayer):
 
         # Create adapter and set it active
         self._active_adapter = adapter_name
-        self.update_layer(adapter_name, r, alpha, rank_dropout, module_dropout, init_weights, **kwargs)
+        self.update_layer(adapter_name, r, lora_alpha, rank_dropout, module_dropout, init_weights, **kwargs)
 
     def _get_delta_activations(
         self, adapter_name: str, input: torch.Tensor, *args: Any, **kwargs: Any
@@ -299,7 +299,7 @@ class Conv2d(LoKrLayer):
         dtype: Optional[torch.dtype] = None,
         adapter_name: str = "default",
         r: int = 0,
-        alpha: float = 0.0,
+        lora_alpha: float = 0.0,
         rank_dropout: float = 0.0,
         module_dropout: float = 0.0,
         use_effective_conv2d: bool = False,
@@ -311,7 +311,7 @@ class Conv2d(LoKrLayer):
         # Create adapter and set it active
         self._active_adapter = adapter_name
         self.update_layer(
-            adapter_name, r, alpha, rank_dropout, module_dropout, init_weights, use_effective_conv2d, **kwargs
+            adapter_name, r, lora_alpha, rank_dropout, module_dropout, init_weights, use_effective_conv2d, **kwargs
         )
 
     def _get_delta_activations(
