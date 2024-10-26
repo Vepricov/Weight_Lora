@@ -50,31 +50,12 @@ def main():
         raise ValueError(f"Wrong dataset name: {data_args.dataset_name}!")
     ############################## PEFT Adapters ###############################
     print(f"Using eval strategy {training_args.ft_strategy}")
-    if training_args.ft_strategy != "Full":
-        if training_args.ft_strategy == "LoRA":
-            peft_args = config.LoraArguments
-        elif training_args.ft_strategy == "LoKR":
-            peft_args = config.LokrArguments
-        elif training_args.ft_strategy == "LoHA":
-            peft_args = config.LohaArguments
-        elif training_args.ft_strategy == "VERA":
-            peft_args = config.VeraArguments
-        elif training_args.ft_strategy == "ADALoRA":
-            peft_args = config.Adalorarguments
-        elif training_args.ft_strategy == "BOFT":
-            peft_args = config.BoftArguments
-        else:
-            raise ValueError(f"Incorrect FT type {training_args.ft_strategy}!")
-        
-        if "deberta" in model_args.model_name_or_path:
-            peft_args.target_modules = ["query_proj", "key_proj", "value_proj",
-                                        "intermediate.dence", "output.dence"]
-        elif ("llama", "mistralai") in model_args.model_name_or_path:
-            peft_args.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
-                                        "gate_proj", "up_proj", "down_proj"]
-    
+    training_args.model_name = model_args.model_name_or_path # for wandb
+    peft_args = config.get_peft_arguments(training_args)
+    if peft_args is not None:
         model = peft.get_peft_model(model, peft_args)    
-    utils.print_trainable_parameters(model)
+    training_args.all_params, training_args.trainable_params, \
+        training_args.proportion=utils.print_trainable_parameters(model) # wandb
     ######################### Optimizer and Scheduler ##########################
     optimizer, scheduler = None, None
     # optimizer = optimizers.AdamW(
@@ -99,10 +80,18 @@ def main():
     # )
     ############################# Training #####################################
     os.environ["WANDB_PROJECT"] = "SBER_LORA"
+    training_args.label_names = ["labels"] # peft and compute_metrics() problem
     #run_name = f"{config.model_name} + {optimizer.__class__.__name__}"
-    run_name = f"[{training_args.ft_strategy}], {data_args.task_name}"
-    training_args.run_name = run_name
-    training_args.label_names = ["labels"]
+    run_name = f"[{training_args.ft_strategy}] {data_args.task_name}"
+    training_args.run_name = run_name                                # for wandb
+    if optimizer is not None:
+        training_args.optimizer = optimizer.__class__.__name__       # for wandb
+        training_args.scheduler = scheduler.__class__.__name__       # for wandb
+    else:
+        training_args.optimizer = training_args.optim                # for wandb
+        training_args.scheduler = training_args.lr_scheduler_type    # for wandb
+    training_args.benchmark_name = data_args.dataset_name            # for wandb
+    training_args.tsk_name = data_args.task_name                     # for wandb
 
     print(f"Len of train / eval datasets = {len(train_dataset)} / {len(eval_dataset)}")
     trainer=Trainer(
@@ -116,17 +105,17 @@ def main():
     )
     trainer.train()
 
-    if training_args.report_to == "wandb":
-        if optimizer is not None:
-            add_wandb_config = {"optimizer" : optimizer.__class__.__name__,
-                                "scheduler" : scheduler.__class__.__name__,
-                                }
-        else:
-            add_wandb_config = {"optimizer" : training_args.optim,
-                                "scheduler" : training_args.lr_scheduler_type,
-                                }
+    # if training_args.report_to == "wandb":
+    #     if optimizer is not None:
+    #         add_wandb_config = {"optimizer" : optimizer.__class__.__name__,
+    #                             "scheduler" : scheduler.__class__.__name__,
+    #                             }
+    #     else:
+    #         add_wandb_config = {"optimizer" : training_args.optim,
+    #                             "scheduler" : training_args.lr_scheduler_type,
+    #                             }
 
-        wandb.config.update(add_wandb_config)
+    #     wandb.config.update(add_wandb_config)
     ############################################################################
 
     del trainer, model

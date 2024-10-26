@@ -33,6 +33,8 @@ def print_trainable_parameters(model):
         f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}"
     )
 
+    return all_param, trainable_params, 100 * trainable_params / all_param
+
 def load_and_transform_jsonl(input_file):
     with open(input_file, 'r', encoding='utf-8') as f:
         data = [json.loads(line) for line in f]

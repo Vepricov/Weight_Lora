@@ -19,6 +19,7 @@ task_to_keys = {
     "wnli": ("sentence1", "sentence2"),
 }
 
+################################ Data Arguments ################################
 @dataclass
 class DataTrainingArguments:
     """
@@ -103,6 +104,7 @@ class DataTrainingArguments:
                 validation_extension == train_extension
             ), "`validation_file` should have the same extension (csv or json) as `train_file`."
 
+############################### Model Arguments ################################
 @dataclass
 class ModelArguments:
     """
@@ -146,6 +148,7 @@ class ModelArguments:
         metadata={"help": "Regularization Loss Weight"},
     )
 
+############################## Training Arguments ##############################
 @dataclass
 class TrainingArguments(TrainingArguments):
     output_dir: str = field(
@@ -236,33 +239,103 @@ class TrainingArguments(TrainingArguments):
         default="zalupa",
         metadata={"help": "Wandb run name"}
     )
+    lora_r: Optional[int] = field(
+        default=None,
+        metadata={"help": "Rank for LoRA and LoRA-like PEFT adapters"}
+    )
+    lora_alpha: Optional[int] = field(
+        default=None,
+        metadata={"help": "Scaling of LoRA and LoRA-like PEFT adapters"}
+    )
+    lora_dropout: Optional[float] = field(
+        default=None,
+        metadata={"help": "Dropout of LoRA and LoRA-like PEFT adapters"}
+    )
+    optim: Optional[str] = field(
+        default="adamw_torch",
+        metadata={"help": "Name of the optimizer to use. Possible choises available here: https://github.com/huggingface/transformers/blob/main/src/transformers/training_args.py"}
+    )
+    model_name: Optional[str] = field(
+        default=None,
+        metadata={"help": "For wandb"}
+    )
+    optimizer: Optional[str] = field(
+        default=None,
+        metadata={"help": "For wandb"}
+    )
+    scheduler: Optional[str] = field(
+        default=None,
+        metadata={"help": "For wandb"}
+    )
+    benchmark_name: Optional[str] = field(
+        default=None,
+        metadata={"help": "For wandb"}
+    )
+    tsk_name: Optional[str] = field(
+        default=None,
+        metadata={"help": "For wandb"}
+    )
+    all_params: Optional[int] = field(
+        default=None,
+        metadata={"help": "All params of the model. For wandb"}
+    )
+    trainable_params: Optional[int] = field(
+        default=None,
+        metadata={"help": "Trainable params of the model. For wandb"}
+    )
+    proportion: Optional[float] = field(
+        default=None,
+        metadata={"help": "all_params / trainable_params * 100%. For wandb"}
+    )
 
 ################################ PEFT Arguments ################################
-LoraArguments = peft.LoraConfig(
-    r                   = 8,
-    lora_alpha          = 32,
-    lora_dropout        = 0.05
-)
-LokrArguments = peft.LoKrConfig(
-    r                   = 8,
-    lora_alpha          = 32,
-    lora_dropout        = 0.05
-)
-LohaArguments = peft.LoHaConfig(
-    r                   = 8,
-    lora_alpha          = 32,
-    lora_dropout        = 0.05
-)
-VeraArguments = peft.VeraConfig(
-    r                   = 8,
-    vera_dropout        = 0.05
-)
-AdaloraArguments = peft.AdaLoraConfig(
-    target_r            = 8,
-)
-BoftArguments = peft.BOFTConfig(
-    boft_block_size     = 8,
-    bias                = "none",
-    boft_dropout        = 0.05
-)
+def get_peft_arguments(training_args):
+    if training_args.ft_strategy == "LoRA":
+        peft_args = peft.LoraConfig(
+            r                   = training_args.lora_r,
+            lora_alpha          = training_args.lora_alpha,
+            lora_dropout        = training_args.lora_dropout
+        )
+    elif training_args.ft_strategy == "LoKR":
+        peft_args = peft.LoKrConfig(
+            r                   = training_args.lora_r,
+            lora_alpha          = training_args.lora_alpha,
+            lora_dropout        = training_args.lora_dropout
+        )
+    elif training_args.ft_strategy == "LoHA":
+        peft_args = peft.LoHaConfig(
+            r                   = training_args.lora_r,
+            lora_alpha          = training_args.lora_alpha,
+            lora_dropout        = training_args.lora_dropout
+        )
+    elif training_args.ft_strategy == "VERA":
+        peft_args = peft.VeraConfig(
+            r                   = training_args.lora_r,
+            vera_dropout        = training_args.lora_dropout
+        )
+    elif training_args.ft_strategy == "ADALoRA":
+        peft_args = peft.AdaLoraConfig(
+            target_r            = training_args.lora_r,
+        )
+    elif training_args.ft_strategy == "BOFT":
+        # peft_args = peft.BOFTConfig(
+        #     boft_block_size     = 8,
+        #     bias                = "none",
+        #     boft_dropout        = 0.05
+        # )
+        raise NotImplementedError("BOFT currently is not available :(")
+    elif training_args.ft_strategy == "Full":
+        return None
+    else:
+        raise ValueError(f"Incorrect FT type {training_args.ft_strategy}!")
+    
+    if "deberta" in training_args.model_name:
+        peft_args.target_modules = ["query_proj", "key_proj", "value_proj",
+                                    "intermediate.dence", "output.dence"]
+    elif ("llama", "mistralai") in training_args.model_name:
+        peft_args.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
+                                    "gate_proj", "up_proj", "down_proj"]
+    else:
+        raise ValueError(f"Pass target_modules to your model {training_args.model_name}")
+    return peft_args
 ################################################################################

@@ -2,8 +2,8 @@ for ft_strategy in LoRA LoKR LoHA VERA ADALoRA Full
 do
     CUDA_VISIBLE_DEVICES=2 python run_experiment.py \
         --dataset_name glue \
-        --task_name cola \
-        --model_name_or_path "microsoft/deberta-v3-base" \
+        --task_name sst2 \
+        --model_name_or_path microsoft/deberta-v3-base \
         --per_device_train_batch_size 32 \
         --per_device_eval_batch_size 32 \
         --gradient_accumulation_steps 6 \
@@ -14,6 +14,9 @@ do
         --eval_steps 16 \
         --save_steps 256 \
         --ft_strategy $ft_strategy \
+        --lora_r 8 \
+        --lora_alpha 32 \
+        --lora_dropout 0.05 \
         --report_to wandb # none or wandb
 done
 
