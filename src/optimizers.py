@@ -378,11 +378,11 @@ class WeightAdamW(optim.Optimizer):
             for p in group["params"]:
                 if p.grad is None:
                     continue
-                if p.data.shape == torch.Size([1]):
-                    # print(f"Before w step: w: {p.data.item()}, grad_w = {p.grad.item()}")
-                    w_data.append(p.data.item())
-                    w_grad.append(p.grad.item())
-                    continue
+                # if p.data.shape == torch.Size([1]):
+                #     # print(f"Before w step: w: {p.data.item()}, grad_w = {p.grad.item()}")
+                #     w_data.append(p.data.item())
+                #     w_grad.append(p.grad.item())
+                #     continue
 
                 grad = p.grad
                 if grad.norm() > 0:
@@ -418,20 +418,21 @@ class WeightAdamW(optim.Optimizer):
                 if group["weight_decay"] > 0.0:
                     p.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
             
-            print(f"There are {sum} non-null gradients")
+            # print(f"There are {sum} non-null gradients")
             ######################## StoIHT step for w #########################
-            w_data = torch.tensor(w_data)
-            w_grad = torch.tensor(w_grad)
-            if w_grad.norm() > 0:
-                # b_t = w_data - group['lr'] * w_grad
-                b_t = w_data - w_grad
-                Gamma_t = self.approx(b_t, self.k)
-                w_data = self.proj(b_t, Gamma_t)
-                i = 0
-                for p in group["params"]:
-                    if p.data.shape == torch.Size([1]):
-                        p.data = torch.tensor([w_data[i]], device=p.device)
-                        i += 1
-                        # print(f"After w step: w: {p.data.item()}")
+            # w_i = w_i / (w_i + eps)
+            # w_data = torch.tensor(w_data)
+            # w_grad = torch.tensor(w_grad)
+            # if w_grad.norm() > 0:
+            #     b_t = w_data - group['lr'] * w_grad
+            #     # b_t = w_data - w_grad
+            #     Gamma_t = self.approx(b_t, self.k)
+            #     w_data = self.proj(b_t, Gamma_t)
+            #     i = 0
+            #     for p in group["params"]:
+            #         if p.data.shape == torch.Size([1]):
+            #             p.data = torch.tensor([w_data[i]], device=p.device)
+            #             i += 1
+            #             # print(f"After w step: w: {p.data.item()}")
             ####################################################################
         return loss

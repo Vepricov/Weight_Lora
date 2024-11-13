@@ -12,6 +12,9 @@ from transformers import (
     EvalPrediction,
     DataCollatorWithPadding,
     default_data_collator,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    AutoConfig
 )
 logger = logging.getLogger(__name__)
 # Loading MMLU categories
@@ -19,21 +22,26 @@ if not os.path.exists('./categories.py'):
     os.system("wget https://raw.githubusercontent.com/hendrycks/test/master/categories.py")
 from src.categories import subcategories, categories as categories_inv
 
-def print_trainable_parameters(model):
+def print_trainable_parameters(model, verbose=True):
     """
     Prints the number of trainable parameters in the model.
     """
     trainable_params = 0
     all_param = 0
-    for _, param in model.named_parameters():
+    for param in model.parameters():
         all_param += param.numel()
         if param.requires_grad:
             trainable_params += param.numel()
-    print(
-        f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}"
-    )
+    for param in model.buffers():
+        all_param += param.numel()
+        if param.requires_grad:
+            trainable_params += param.numel()
+    if verbose:
+        print(
+            f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}"
+        )
 
-    return all_param, trainable_params, 100 * trainable_params / all_param
+    return all_param, trainable_params
 
 def load_and_transform_jsonl(input_file):
     with open(input_file, 'r', encoding='utf-8') as f:
@@ -59,6 +67,31 @@ def set_device(device_no: int): # выбирает GPU-шку и выводит 
 
     return device
 
+def count_atapters(model, peft_type):
+    if peft_type in ["LoRA", "ADALoRA", "DoRA", "rsLoRA"]:
+        adapter_name = "lora_A"
+    elif peft_type == "LoKR":
+        adapter_name = "lokr_w1"
+    elif peft_type == "LoHA":
+        adapter_name = "hada_w1_a" 
+    elif peft_type == "VERA":
+        adapter_name = "vera_lambda_b"
+    elif peft_type == "WeightLoRA":
+        adapter_name = "weight_lora_A"
+    elif peft_type == "Full":
+        adapter_name = None
+    else:
+        raise ValueError(f"Wrong peft_type: {peft_type}")
+    
+    num_adapters = None
+    if adapter_name is not None:
+        num_adapters = 0
+        for name, _ in model.named_parameters():
+            if adapter_name in name:
+                num_adapters += 1
+    
+    return num_adapters
+    
 def make_mlm_dataset_form_mmlu(dataset):
     dataset_list = []
     for a in dataset:
@@ -185,7 +218,7 @@ def mmlu_process_prediction(pred):
     
     return pred
 
-def glue_preprocess(data_args, training_args, tokenizer, model):
+def glue_preprocess(data_args, training_args, model_args):
     task_to_keys = {
         "cola": ("sentence", None),
         "mnli": ("premise", "hypothesis"),
@@ -219,6 +252,30 @@ def glue_preprocess(data_args, training_args, tokenizer, model):
     else:
         # We will pad later, dynamically at batch creation, to the max sequence length in each batch
         padding = False
+
+    config = AutoConfig.from_pretrained(
+        model_args.config_name if model_args.config_name else model_args.model_name_or_path,
+        num_labels=num_labels,
+        finetuning_task=data_args.task_name,
+        cache_dir=model_args.cache_dir,
+        revision=model_args.model_revision,
+        use_auth_token=True if model_args.use_auth_token else None,
+    )
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
+        cache_dir=model_args.cache_dir,
+        use_fast=model_args.use_fast_tokenizer,
+        revision=model_args.model_revision,
+        use_auth_token=True if model_args.use_auth_token else None,
+    )
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_args.model_name_or_path,
+        from_tf=bool(".ckpt" in model_args.model_name_or_path),
+        config=config,
+        cache_dir=model_args.cache_dir,
+        revision=model_args.model_revision,
+        use_auth_token=True if model_args.use_auth_token else None,
+    )
     # Some models have set the order of the labels to use, so let's make sure we do use it.
     label_to_id = None
     if (
@@ -299,4 +356,4 @@ def glue_preprocess(data_args, training_args, tokenizer, model):
     else:
         data_collator = None
 
-    return train_dataset, eval_dataset, data_collator, compute_metrics
+    return train_dataset, eval_dataset, datasets, data_collator, compute_metrics, model, tokenizer

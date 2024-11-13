@@ -1,8 +1,8 @@
-for ft_strategy in LoRA LoKR LoHA VERA ADALoRA Full
+for task_name in cola mnli mrpc qnli qqp rte sst2 stsb
 do
-    CUDA_VISIBLE_DEVICES=2 python run_experiment.py \
+    CUDA_VISIBLE_DEVICES=1 python run_experiment.py \
         --dataset_name glue \
-        --task_name sst2 \
+        --task_name $task_name \
         --model_name_or_path microsoft/deberta-v3-base \
         --per_device_train_batch_size 32 \
         --per_device_eval_batch_size 32 \
@@ -11,12 +11,11 @@ do
         --lr_scheduler_type linear \
         --warmup_steps 100 \
         --max_steps 512 \
-        --eval_steps 16 \
+        --eval_steps 64 \
         --save_steps 256 \
-        --ft_strategy $ft_strategy \
+        --ft_strategy DoRA \
         --lora_r 8 \
         --lora_alpha 32 \
         --lora_dropout 0.05 \
         --report_to wandb # none or wandb
 done
-

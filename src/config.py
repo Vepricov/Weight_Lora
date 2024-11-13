@@ -159,7 +159,7 @@ class TrainingArguments(TrainingArguments):
         default=True,
         metadata={"help": "Do training or not"}
     )
-    do_eval: Optional[bool] = field(
+    do_evaluate: Optional[bool] = field(
         default=True,
         metadata={"help": "Do evaluating or not"}
     )
@@ -283,9 +283,25 @@ class TrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "Trainable params of the model. For wandb"}
     )
-    proportion: Optional[float] = field(
+    train_proportion: Optional[float] = field(
         default=None,
         metadata={"help": "all_params / trainable_params * 100%. For wandb"}
+    )
+    peft_proportion: Optional[float] = field(
+        default=None,
+        metadata={"help": "all_params / (all_params ater PEFT - all_params before PEFT) * 100%. For wandb"}
+    )
+    peft_params: Optional[float] = field(
+        default=None,
+        metadata={"help": "All params after peft - All params before peft. For wandb"}
+    )
+    num_peft_adapters: Optional[float] = field(
+        default=None,
+        metadata={"help": "Num peft adapters across layers. For wandb"}
+    )
+    k: Optional[int] = field(
+        default=None,
+        metadata={"help": "Number active adapters for WeightLora. Must be less or equal to num_peft_adapters."}
     )
 
 ################################ PEFT Arguments ################################
@@ -324,6 +340,26 @@ def get_peft_arguments(training_args):
         #     boft_dropout        = 0.05
         # )
         raise NotImplementedError("BOFT currently is not available :(")
+    elif training_args.ft_strategy == "DoRA":
+        peft_args = peft.LoraConfig(
+            r                   = training_args.lora_r,
+            lora_alpha          = training_args.lora_alpha,
+            lora_dropout        = training_args.lora_dropout,
+            use_dora            = True,
+        )
+    elif training_args.ft_strategy == "rsLoRA":
+        peft_args = peft.LoraConfig(
+            r                   = training_args.lora_r,
+            lora_alpha          = training_args.lora_alpha,
+            lora_dropout        = training_args.lora_dropout,
+            use_rslora          = True,
+        )
+    elif training_args.ft_strategy == "WeightLoRA":
+        peft_args = peft.WeightLoraConfig(
+            r                   = training_args.lora_r,
+            lora_alpha          = training_args.lora_alpha,
+            lora_dropout        = training_args.lora_dropout,
+        )
     elif training_args.ft_strategy == "Full":
         return None
     else:
