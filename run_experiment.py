@@ -49,11 +49,22 @@ def main():
     training_args.peft_proportion = training_args.peft_params / training_args.all_params * 100 
     ######################### Optimizer and Scheduler ##########################
     optimizer, scheduler = None, None
-    optimizer = optimizers.WeightAdamW(
+    # optimizer = optimizers.WeightAdamW(
+    #     model.parameters(), 
+    #     lr=training_args.learning_rate,
+    #     weight_decay=training_args.weight_decay,
+    #     k=training_args.k,
+    # )
+    compressor_params = {"compression_rate": training_args.compression_rate,
+                         "K" : training_args.K_compress, "b" : training_args.b, 
+                         "proj" : None}
+    compression_name = training_args.compression_name
+    # compression_name = None
+    optimizer = optimizers.QSGD(
         model.parameters(), 
         lr=training_args.learning_rate,
-        weight_decay=training_args.weight_decay,
-        k=training_args.k,
+        compression_name=compression_name,
+        compressor_params=compressor_params
     )
     scheduler = get_scheduler(
         name=training_args.lr_scheduler_type, 
@@ -62,11 +73,12 @@ def main():
         num_training_steps=training_args.max_steps
     )
     ############################### Wandb Saves ################################
-    os.environ["WANDB_PROJECT"] = "SBER_LORA"
+    os.environ["WANDB_PROJECT"] = "ICLR KAWASAKI"
     training_args.label_names = ["labels"] # peft and compute_metrics() problem
     # run_name = f"{config.model_name} + {optimizer.__class__.__name__}"
-    run_name = f"[{training_args.ft_strategy}, k={training_args.k}] {data_args.task_name}"
+    # run_name = f"[{training_args.ft_strategy}, k={training_args.k}] {data_args.task_name}"
     # run_name = "[TEST]"
+    run_name = f"{compression_name}, compr_rate = {compressor_params['compression_rate']}"
     training_args.run_name = run_name
     training_args.output_dir = f"{training_args.output_dir}/{run_name}"
     if optimizer is not None:

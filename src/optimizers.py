@@ -436,3 +436,88 @@ class WeightAdamW(optim.Optimizer):
             #             # print(f"After w step: w: {p.data.item()}")
             ####################################################################
         return loss
+
+from math import ceil
+class Rand:
+    def __init__(self, compressor_params: dict={"compression_rate": 0.1}) -> None:
+        self.compression_rate = compressor_params["compression_rate"]
+        self.used_coordinates = []
+        self.K = 0
+    def get_probs(self, x: torch.Tensor):
+        return torch.ones_like(x)
+    def compress(self, x: torch.Tensor):
+        d = x.shape[0]
+        m = ceil(self.compression_rate * d)
+        x_flatten = x.reshape(-1)
+        probs = self.get_probs(x_flatten)
+        idxs = torch.multinomial(probs, m)
+        x_flatten[~idxs] = 0
+        self.used_coordinates = idxs.tolist() + self.used_coordinates
+        self.used_coordinates = self.used_coordinates[:self.K * m]
+        return 1./ self.compression_rate * x_flatten.reshape(x.shape)
+
+class Banlast(Rand):
+    def __init__(self, compressor_params: dict={"compression_rate": 0.1,
+                                                "K" : 7}):
+        super().__init__(compressor_params)
+        self.K = compressor_params["K"]
+    def get_probs(self, x: torch.Tensor):
+        probs = torch.ones_like(x)
+        probs[self.used_coordinates] = 0.
+        if probs.sum().item() == 0:
+            probs = torch.ones_like(x)
+        return probs
+
+class KAWASAKI(Rand):
+    def __init__(self, compressor_params: dict={"compression_rate": 0.1,
+                                                "K" : 7, "b" : 2., "proj" : None}):
+        super().__init__(compressor_params)
+        self.K = compressor_params["K"]
+        self.b = compressor_params["b"]
+        self.proj = compressor_params["proj"]
+    def get_probs(self, x: torch.Tensor):
+        probs = torch.ones_like(x)
+        num_used_coordinates = torch.Tensor([self.used_coordinates.count(i)
+                                             for i in range(x.shape[0])]).to(x.device)
+        probs /= self.b**num_used_coordinates
+        if self.proj is not None:
+            probs = self.proj(probs)
+        return probs
+
+
+class QSGD(optim.Optimizer):
+    def __init__(self, params, lr=0.01, compression_name: str = None,
+                 compressor_params=None):
+        if lr < 0.0:
+            raise ValueError("Invalid learning rate: {}".format(lr))
+        defaults = dict(lr=lr)
+        super(QSGD, self).__init__(params, defaults)
+        if compression_name not in ["Rand", "BanLast", "KAWASAKI", None]:
+            raise ValueError(f"Wrong compression name {compression_name}")
+        self.compression_name = compression_name
+        self.compressor_params = compressor_params
+            
+    def step(self, closure: Callable = None):
+        loss = None
+        if closure is not None:
+            loss = closure()
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                state = self.state[p]
+                if len(state) == 0:
+                    if self.compression_name == "Rand":
+                        state["compressor"] = Rand(self.compressor_params)
+                    elif self.compression_name == "BanLast":
+                        state["compressor"] = Banlast(self.compressor_params)
+                    elif self.compression_name == "KAWASAKI":
+                        state["compressor"] = KAWASAKI(self.compressor_params)
+                    else:
+                        state["compressor"] = None
+                if state["compressor"] is not None:
+                    grad = state["compressor"].compress(p.grad.data)
+                    p.data -= group['lr'] * grad
+                else:
+                    p.data -= group['lr'] * p.grad.data
+        return loss

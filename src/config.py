@@ -303,6 +303,22 @@ class TrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "Number active adapters for WeightLora. Must be less or equal to num_peft_adapters."}
     )
+    compression_name: Optional[str] = field(
+        default=None,
+        metadata={"help": "ICLR KAWASAKI"}
+    )
+    compression_rate: Optional[float] = field(
+        default=None,
+        metadata={"help": "ICLR KAWASAKI"}
+    )
+    K_compress: Optional[int] = field(
+        default=None,
+        metadata={"help": "ICLR KAWASAKI"}
+    )
+    b: Optional[float] = field(
+        default=None,
+        metadata={"help": "ICLR KAWASAKI"}
+    )
 
 ################################ PEFT Arguments ################################
 def get_peft_arguments(training_args):
