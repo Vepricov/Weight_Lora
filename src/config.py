@@ -303,6 +303,10 @@ class TrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "Number active adapters for WeightLora. Must be less or equal to num_peft_adapters."}
     )
+    learning_rate_w: Optional[float] = field(
+        default=10.,
+        metadata={"help": "Learning rate for weights in Weight LoRA"}
+    )
     compression_name: Optional[str] = field(
         default=None,
         metadata={"help": "ICLR KAWASAKI"}
@@ -318,6 +322,10 @@ class TrainingArguments(TrainingArguments):
     b: Optional[float] = field(
         default=None,
         metadata={"help": "ICLR KAWASAKI"}
+    )
+    use_rand: Optional[bool] = field(
+        default=None,
+        metadata={"help": "If true, then we use random weights in WeightLoRA"}
     )
 
 ################################ PEFT Arguments ################################

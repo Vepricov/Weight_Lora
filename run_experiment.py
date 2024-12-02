@@ -34,37 +34,34 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
         model.config.pad_token_id = model.config.eos_token_id
     ############################### PEFT Adapters ##############################
-    print(f"Using eval strategy {training_args.ft_strategy}")
     all_params_before_peft, _ = utils.print_trainable_parameters(model, verbose=False)
     training_args.model_name = model_args.model_name_or_path         # for wandb
     peft_args = config.get_peft_arguments(training_args)
     if peft_args is not None:
         model = peft.get_peft_model(model, peft_args)
+    if training_args.use_rand and training_args.ft_strategy == "WeightLoRA":
+        training_args.ft_strategy = "RandLoRA"
+        num_peft_adapters = utils.count_atapters(model, training_args.ft_strategy)
+        utils.apply_rand_weight_lora(model, num_peft_adapters, training_args.k)
+    print(f"Using eval strategy {training_args.ft_strategy}")
     ############################### Wandb Saves ################################
     training_args.all_params, training_args.trainable_params = \
         utils.print_trainable_parameters(model)
-    training_args.num_peft_adapters = utils.count_atapters(model, training_args.ft_strategy)
+    training_args.num_peft_adapters = num_peft_adapters
     training_args.peft_params = training_args.all_params - all_params_before_peft
     training_args.train_proportion = training_args.trainable_params / training_args.all_params * 100 
     training_args.peft_proportion = training_args.peft_params / training_args.all_params * 100 
     ######################### Optimizer and Scheduler ##########################
     optimizer, scheduler = None, None
-    # optimizer = optimizers.WeightAdamW(
-    #     model.parameters(), 
-    #     lr=training_args.learning_rate,
-    #     weight_decay=training_args.weight_decay,
-    #     k=training_args.k,
-    # )
-    compressor_params = {"compression_rate": training_args.compression_rate,
-                         "K" : training_args.K_compress, "b" : training_args.b, 
-                         "proj" : None}
-    compression_name = training_args.compression_name
-    # compression_name = None
-    optimizer = optimizers.QSGD(
-        model.parameters(), 
+
+    weight_params = [p for name, p in model.named_parameters() if "weight_lora_w" in name]
+    others = [p for name, p in model.named_parameters() if "weight_lora_w" not in name]
+    optimizer = optimizers.WeightAdamW(
+        [{"params" : others},
+         {"params" : weight_params, "k" : training_args.k, "proj" : optimizers.proj_0,
+          "lr" : training_args.learning_rate_w}], 
         lr=training_args.learning_rate,
-        compression_name=compression_name,
-        compressor_params=compressor_params
+        weight_decay=training_args.weight_decay,
     )
     scheduler = get_scheduler(
         name=training_args.lr_scheduler_type, 
@@ -73,12 +70,13 @@ def main():
         num_training_steps=training_args.max_steps
     )
     ############################### Wandb Saves ################################
-    os.environ["WANDB_PROJECT"] = "ICLR KAWASAKI"
+    os.environ["WANDB_PROJECT"] = "SBER_LORA"
+    os.environ["WANDB_TAGS"] = f"GLUE {data_args.task_name}"
     training_args.label_names = ["labels"] # peft and compute_metrics() problem
     # run_name = f"{config.model_name} + {optimizer.__class__.__name__}"
-    # run_name = f"[{training_args.ft_strategy}, k={training_args.k}] {data_args.task_name}"
+    run_name = f"[{training_args.ft_strategy}, k={training_args.k}] {data_args.task_name}"
+    # run_name = f"[{training_args.ft_strategy}] {data_args.task_name}"
     # run_name = "[TEST]"
-    run_name = f"{compression_name}, compr_rate = {compressor_params['compression_rate']}"
     training_args.run_name = run_name
     training_args.output_dir = f"{training_args.output_dir}/{run_name}"
     if optimizer is not None:
@@ -110,13 +108,18 @@ def main():
         train_metrics["train_samples"] = min(max_train_samples, len(train_dataset))
         train_metrics["train_memory_gb"] = torch.cuda.max_memory_allocated() / 2**30
         train_metrics["train_runtime"] /= 60
-        if training_args.ft_strategy == "WeightLoRA":
+        if training_args.ft_strategy in ["WeightLoRA", "RandLoRA"]:
             i = 0
             for name, param in model.named_parameters():
                 if "weight_lora_w" in name:
                     if param.sum().item() > 0:
                         i += 1
-                        train_metrics[f"active_adapters_{i}"] = name
+                        if training_args.model_name == "microsoft/deberta-v3-base":
+                            tmp = name.split(".")
+                            load_name = f"{tmp[8].split('_')[0]}#{tmp[5]}"
+                        else:
+                            load_name = name
+                        train_metrics[f"active_adapters_{i}"] = load_name
 
         trainer.save_model()
 

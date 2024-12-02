@@ -76,7 +76,7 @@ def count_atapters(model, peft_type):
         adapter_name = "hada_w1_a" 
     elif peft_type == "VERA":
         adapter_name = "vera_lambda_b"
-    elif peft_type == "WeightLoRA":
+    elif peft_type in ["WeightLoRA", "RandLoRA"]:
         adapter_name = "weight_lora_A"
     elif peft_type == "Full":
         adapter_name = None
@@ -124,6 +124,7 @@ def mmlu_preporcess(config):
         config.model_name, 
         padding_side=config.tokenizer_config.padding_side,
         model_max_length=config.max_length,
+        use_fast = False,
     )
     # tokenizer_mistral = transformers.AutoTokenizer.from_pretrained(
     #     "mistralai/Mistral-7B-Instruct-v0.3", 
@@ -357,3 +358,13 @@ def glue_preprocess(data_args, training_args, model_args):
         data_collator = None
 
     return train_dataset, eval_dataset, datasets, data_collator, compute_metrics, model, tokenizer
+
+def apply_rand_weight_lora(model, n, k):
+    idxs = torch.randperm(n)[:k] 
+    i = 0
+    for name, param in model.named_parameters():
+        if "weight_lora_w" in name:
+            param.requires_grad = False
+            if i not in idxs:
+                param.data = torch.tensor([0.])
+            i += 1

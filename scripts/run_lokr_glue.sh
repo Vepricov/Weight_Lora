@@ -14,7 +14,7 @@ do
         --eval_steps 64 \
         --save_steps 256 \
         --ft_strategy LoKR \
-        --lora_r 8 \
+        --lora_r 32 \
         --lora_alpha 32 \
         --lora_dropout 0.05 \
         --report_to wandb # none or wandb
