@@ -1,10 +1,8 @@
 import torch, gc, os, wandb, peft
 from transformers import (
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
     Trainer,
     HfArgumentParser,
-    get_scheduler
+    get_scheduler,
 )
 from src import (
     config,
@@ -39,11 +37,11 @@ def main():
     peft_args = config.get_peft_arguments(training_args)
     if peft_args is not None:
         model = peft.get_peft_model(model, peft_args)
+    num_peft_adapters = utils.count_atapters(model, training_args.ft_strategy)
     if training_args.use_rand and training_args.ft_strategy == "WeightLoRA":
         training_args.ft_strategy = "RandLoRA"
-        num_peft_adapters = utils.count_atapters(model, training_args.ft_strategy)
         utils.apply_rand_weight_lora(model, num_peft_adapters, training_args.k)
-    print(f"Using eval strategy {training_args.ft_strategy}")
+    #print(f"Using eval strategy {training_args.ft_strategy}")
     ############################### Wandb Saves ################################
     training_args.all_params, training_args.trainable_params = \
         utils.print_trainable_parameters(model)
@@ -51,31 +49,66 @@ def main():
     training_args.peft_params = training_args.all_params - all_params_before_peft
     training_args.train_proportion = training_args.trainable_params / training_args.all_params * 100 
     training_args.peft_proportion = training_args.peft_params / training_args.all_params * 100 
+    ft_strategy = training_args.ft_strategy
+    if ft_strategy == "WeightLoRA":
+        if training_args.use_fat: ft_strategy = "FatLoRA"
+        if training_args.use_rand: ft_strategy = "RandLoRA"
+    training_args.ft_strategy = ft_strategy
     ######################### Optimizer and Scheduler ##########################
     optimizer, scheduler = None, None
-
-    weight_params = [p for name, p in model.named_parameters() if "weight_lora_w" in name]
-    others = [p for name, p in model.named_parameters() if "weight_lora_w" not in name]
-    optimizer = optimizers.WeightAdamW(
-        [{"params" : others},
-         {"params" : weight_params, "k" : training_args.k, "proj" : optimizers.proj_0,
-          "lr" : training_args.learning_rate_w}], 
-        lr=training_args.learning_rate,
-        weight_decay=training_args.weight_decay,
-    )
-    scheduler = get_scheduler(
-        name=training_args.lr_scheduler_type, 
-        optimizer=optimizer,
-        num_warmup_steps=training_args.warmup_steps,
-        num_training_steps=training_args.max_steps
-    )
+    if training_args.ft_strategy == "FatLoRA":
+        prefix = "weight_lora"
+        weight_params = [p for name, p in model.named_parameters() if f"{prefix}_w" in name]
+        loraAB_params = [p for name, p in model.named_parameters() if f"{prefix}_A" in name or f"{prefix}_B" in name]
+        other_params = [p for name, p in model.named_parameters() if prefix not in name]
+        optimizer = optimizers.FatAdamW(
+            [{"params" : weight_params, "proj" : optimizers.proj_0,
+              "lr" : training_args.learning_rate_w, "name" : "weight_params"},
+             {"params" : loraAB_params, "name" : "loraAB"},
+             {"params" : other_params,  "name" : "other_params"},], 
+            lr=training_args.learning_rate,
+            weight_decay=training_args.weight_decay,
+            num_adapters=num_peft_adapters,
+            fat_step=training_args.fat_step,
+            max_fat_steps=training_args.max_fat_steps,
+            lora_extention=training_args.lora_extention,
+        )
+    elif training_args.ft_strategy == "WeightLoRA":
+        weight_params = [p for name, p in model.named_parameters() if "weight_lora_w" in name]
+        others = [p for name, p in model.named_parameters() if "weight_lora_w" not in name]
+        optimizer = optimizers.WeightAdamW(
+            [{"params" : others, "name" : "other_params"},
+             {"params" : weight_params, "k" : training_args.k, "proj" : optimizers.proj_0,
+              "lr" : training_args.learning_rate_w, "name" : "weight_params"}], 
+            lr=training_args.learning_rate,
+            weight_decay=training_args.weight_decay,
+        )
+    else:
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=training_args.learning_rate,
+            weight_decay=training_args.weight_decay
+        )
+    
+    if optimizer is not None:
+        scheduler = get_scheduler(
+            name=training_args.lr_scheduler_type, 
+            optimizer=optimizer,
+            num_warmup_steps=training_args.warmup_steps,
+            num_training_steps=training_args.max_steps
+        )
     ############################### Wandb Saves ################################
     os.environ["WANDB_PROJECT"] = "SBER_LORA"
-    os.environ["WANDB_TAGS"] = f"GLUE {data_args.task_name}"
+    os.environ["WANDB_TAGS"] = f"NEW GLUE {data_args.task_name}"
     training_args.label_names = ["labels"] # peft and compute_metrics() problem
     # run_name = f"{config.model_name} + {optimizer.__class__.__name__}"
-    run_name = f"[{training_args.ft_strategy}, k={training_args.k}] {data_args.task_name}"
-    # run_name = f"[{training_args.ft_strategy}] {data_args.task_name}"
+    if training_args.ft_strategy == "FatLoRA":
+        run_name = f"[{training_args.ft_strategy} {training_args.lora_extention}]"
+    elif training_args.ft_strategy in ["WeightLoRA", "RandLoRA"]:
+        run_name = f"[{training_args.ft_strategy} k={training_args.k}]"
+    else:
+        run_name = f"[{training_args.ft_strategy} r={training_args.lora_r}]"
+    run_name += f" {data_args.task_name}"
     # run_name = "[TEST]"
     training_args.run_name = run_name
     training_args.output_dir = f"{training_args.output_dir}/{run_name}"
@@ -88,6 +121,7 @@ def main():
     training_args.benchmark_name = data_args.dataset_name
     training_args.tsk_name = data_args.task_name
     ############################# Training #####################################
+    print("$"*30, f" {run_name} ", "$"*30)
     print(f"Len of train / eval datasets = {len(train_dataset)} / {len(eval_dataset)}")
     trainer=Trainer(
         model=model,
@@ -108,7 +142,7 @@ def main():
         train_metrics["train_samples"] = min(max_train_samples, len(train_dataset))
         train_metrics["train_memory_gb"] = torch.cuda.max_memory_allocated() / 2**30
         train_metrics["train_runtime"] /= 60
-        if training_args.ft_strategy in ["WeightLoRA", "RandLoRA"]:
+        if training_args.ft_strategy in ["WeightLoRA", "RandLoRA", "FatLoRA"]:
             i = 0
             for name, param in model.named_parameters():
                 if "weight_lora_w" in name:

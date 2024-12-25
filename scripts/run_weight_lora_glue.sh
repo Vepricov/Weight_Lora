@@ -1,9 +1,10 @@
 #for task_name in cola mnli mrpc qnli qqp rte sst2 stsb
-for task_name in rte
+for task_name in qqp rte sst2 stsb
 do
     for k in 1 5 10
     do
-        CUDA_VISIBLE_DEVICES=1 python run_experiment.py \
+        clear
+        CUDA_VISIBLE_DEVICES=2 python run_experiment.py \
             --dataset_name glue \
             --task_name $task_name \
             --model_name_or_path microsoft/deberta-v3-base \
@@ -22,6 +23,6 @@ do
             --lora_alpha 32 \
             --lora_dropout 0.05 \
             --k $k \
-            --report_to wandb # none or wandb --learning_rate_w 1e10 \
+            --report_to wandb # none or wandb
     done
 done

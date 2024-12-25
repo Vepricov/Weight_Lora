@@ -327,6 +327,22 @@ class TrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "If true, then we use random weights in WeightLoRA"}
     )
+    use_fat: Optional[bool] = field(
+        default=None,
+        metadata={"help": "If true, then we use fatness in WeightLoRA"}
+    )
+    fat_step: Optional[int] = field(
+        default=None,
+        metadata={"help": "Fat steps for weight lora"}
+    )
+    max_fat_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "Max steps of fatting of lora. For weight lora"}
+    )
+    lora_extention: Optional[str] = field(
+        default=None,
+        metadata={"help": "How to extednd adapters in FatLoRA. Can be smart ot dummy"}
+    )
 
 ################################ PEFT Arguments ################################
 def get_peft_arguments(training_args):
