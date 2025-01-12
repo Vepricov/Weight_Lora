@@ -1,4 +1,4 @@
-import torch, gc, os, wandb, peft
+import torch, gc, os, wandb, peft, json
 from transformers import (
     Trainer,
     HfArgumentParser,
@@ -7,7 +7,8 @@ from transformers import (
 from src import (
     config,
     optimizers,
-    utils
+    utils,
+    trainer_qa
 )
 
 def main():
@@ -22,12 +23,31 @@ def main():
     utils.set_seed(training_args.seed)
     ################# Model, Tokenizer and Dataset Downloading #################
     if data_args.dataset_name == "glue":
-        train_dataset, eval_dataset, datasets, data_collator, compute_metrics, model, tokenizer =\
-            utils.glue_preprocess(
-                data_args, training_args, model_args
-            )
-    else:
-        raise ValueError(f"Wrong dataset name: {data_args.dataset_name}!")
+        (train_dataset, 
+         eval_dataset,
+         test_dataset,
+         datasets, 
+         data_collator, 
+         compute_metrics, 
+         model, 
+         tokenizer) = utils.glue_preprocess(
+            data_args, training_args, model_args
+        )
+    elif data_args.dataset_name in ["squad", "squad_v2"]:
+        data_args.version_2_with_negative = data_args.dataset_name == "squad_v2"
+        (train_dataset, 
+         eval_dataset,
+         eval_examples,
+         test_dataset,
+         test_examples,
+         data_collator, 
+         compute_metrics, 
+         model, 
+         tokenizer,
+         post_processing_function) = utils.squad_preprocess(
+            data_args, training_args, model_args
+        )
+        training_args.metric_for_best_model = 'eval_f1'
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
         model.config.pad_token_id = model.config.eos_token_id
@@ -56,6 +76,17 @@ def main():
     training_args.ft_strategy = ft_strategy
     ######################### Optimizer and Scheduler ##########################
     optimizer, scheduler = None, None
+    if "tuned" in [training_args.learning_rate]: # [TODO] add more tuned params
+        f_name = "./src/tuned_params.json"
+        with open(f_name) as f:
+            tuned_params = json.load(f)
+        if data_args.dataset_name == "glue":
+            lr = tuned_params["glue"][data_args.task_name][training_args.ft_strategy]["lr"]
+        else:
+            lr = tuned_params[data_args.dataset_name][training_args.ft_strategy]["lr"]
+        training_args.learning_rate = lr
+    else:
+        training_args.learning_rate = float(training_args.learning_rate)
     if training_args.ft_strategy == "FatLoRA":
         prefix = "weight_lora"
         weight_params = [p for name, p in model.named_parameters() if f"{prefix}_w" in name]
@@ -99,8 +130,6 @@ def main():
         )
     ############################### Wandb Saves ################################
     os.environ["WANDB_PROJECT"] = "SBER_LORA"
-    os.environ["WANDB_TAGS"] = f"NEW GLUE {data_args.task_name}"
-    training_args.label_names = ["labels"] # peft and compute_metrics() problem
     # run_name = f"{config.model_name} + {optimizer.__class__.__name__}"
     if training_args.ft_strategy == "FatLoRA":
         run_name = f"[{training_args.ft_strategy} {training_args.lora_extention}]"
@@ -108,7 +137,13 @@ def main():
         run_name = f"[{training_args.ft_strategy} k={training_args.k}]"
     else:
         run_name = f"[{training_args.ft_strategy} r={training_args.lora_r}]"
-    run_name += f" {data_args.task_name}"
+    if data_args.dataset_name == "glue":
+        os.environ["WANDB_TAGS"] = f"NEW GLUE {data_args.task_name}"
+        training_args.label_names = ["labels"] # peft and compute_metrics() problem
+        run_name += f" {data_args.task_name}, lr={training_args.learning_rate}"
+    if data_args.dataset_name in ["squad", "squad_v2"]:
+        os.environ["WANDB_TAGS"] = f"{data_args.dataset_name}"
+        run_name += f" {data_args.dataset_name}, lr={training_args.learning_rate}"
     # run_name = "[TEST]"
     training_args.run_name = run_name
     training_args.output_dir = f"{training_args.output_dir}/{run_name}"
@@ -123,16 +158,31 @@ def main():
     ############################# Training #####################################
     print("$"*30, f" {run_name} ", "$"*30)
     print(f"Len of train / eval datasets = {len(train_dataset)} / {len(eval_dataset)}")
-    trainer=Trainer(
+    if data_args.dataset_name == "glue":
+        trainer=Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset if training_args.do_train else None,
+            eval_dataset=eval_dataset if training_args.do_evaluate else None,
+            compute_metrics=compute_metrics,
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+            optimizers=[optimizer, scheduler]
+        )
+    if data_args.dataset_name in ["squad", "squad_v2"]:
+        trainer = trainer_qa.QuestionAnsweringTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
-        eval_dataset=eval_dataset if training_args.do_evaluate else None,
-        compute_metrics=compute_metrics,
+        eval_dataset=eval_dataset if training_args.do_eval else None,
+        eval_examples=eval_examples if training_args.do_eval else None,
         tokenizer=tokenizer,
         data_collator=data_collator,
+        post_process_function=post_processing_function,
+        compute_metrics=compute_metrics,
         optimizers=[optimizer, scheduler]
     )
+
     if training_args.do_train:
         train_result = trainer.train()
         train_metrics = train_result.metrics
@@ -164,22 +214,33 @@ def main():
             wandb.config.update(train_metrics, allow_val_change=True)
     ################################ Evaluation ################################
     if training_args.do_evaluate:
+        if data_args.dataset_name == "glue":
         # Loop to handle MNLI double evaluation (matched, mis-matched)
-        tasks = [data_args.task_name]
-        eval_datasets = [eval_dataset]
-        if data_args.task_name == "mnli":
-            tasks.append("mnli-mm")
-            eval_datasets.append(datasets["validation_mismatched"])
+            tasks = [data_args.task_name]
+            eval_datasets = [eval_dataset]
+            if data_args.task_name == "mnli":
+                tasks.append("mnli-mm")
+                eval_datasets.append(datasets["validation_mismatched"])
 
-        for eval_dataset, task in zip(eval_datasets, tasks):
-            eval_metrics = trainer.evaluate(eval_dataset=eval_dataset)
+            for eval_dataset, task in zip(eval_datasets, tasks):
+                eval_metrics = trainer.evaluate(eval_dataset=eval_dataset)
+                max_val_samples = data_args.max_val_samples if data_args.max_val_samples is not None else len(eval_dataset)
+                eval_metrics["eval_samples"] = min(max_val_samples, len(eval_dataset))
+                trainer.log_metrics("Eval_%s"%task, eval_metrics)
+                trainer.save_metrics("Eval_%s"%task, eval_metrics)
+
+        if data_args.dataset_name in ["squad", "squad_v2"]:
+            eval_metrics = trainer.evaluate()
 
             max_val_samples = data_args.max_val_samples if data_args.max_val_samples is not None else len(eval_dataset)
             eval_metrics["eval_samples"] = min(max_val_samples, len(eval_dataset))
-            trainer.log_metrics("Eval_%s"%task, eval_metrics)
-            trainer.save_metrics("Eval_%s"%task, eval_metrics)
+
+            trainer.log_metrics("Eval", eval_metrics)
+            trainer.save_metrics("Eval", eval_metrics)
+            
         eval_metrics["eval_memory_gb"] = torch.cuda.max_memory_allocated() / 2**30
-        eval_metrics["eval_runtime"] /= 60
+        if "eval_runtime" in eval_metrics.keys():
+            eval_metrics["eval_runtime"] /= 60
         if "wandb" in training_args.report_to:
             wandb.config.update(eval_metrics, allow_val_change=True)
     ############################################################################

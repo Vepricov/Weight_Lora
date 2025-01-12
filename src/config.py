@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 from dataclasses import dataclass, field
 from transformers import TrainingArguments
 from transformers.utils import check_min_version
@@ -88,21 +88,77 @@ class DataTrainingArguments:
         default=None, 
         metadata={"help": "A csv or a json file containing the test data."}
     )
+    preprocessing_num_workers: Optional[int] = field(
+        default=None,
+        metadata={"help": "The number of processes to use for the preprocessing"},
+    )
+    doc_stride: Optional[int] = field(
+        default=32,
+        metadata={"help": "When splitting up a long document into chunks, how much stride to take between chunks."},
+    )
+    version_2_with_negative: bool = field(
+        default=False, metadata={"help": "If true, some of the examples do not have an answer."}
+    )
+    null_score_diff_threshold: float = field(
+        default=0.0,
+        metadata={
+            "help": (
+                "The threshold used to select the null answer: if the best answer has a score that is less than "
+                "the score of the null answer minus this threshold, the null answer is selected for this example. "
+                "Only useful when `version_2_with_negative=True`."
+            )
+        },
+    )
+    n_best_size: int = field(
+        default=20,
+        metadata={"help": "The total number of n-best predictions to generate when looking for an answer."},
+    )
+    max_answer_length: int = field(
+        default=30,
+        metadata={
+            "help": (
+                "The maximum length of an answer that can be generated. This is needed because the start "
+                "and end predictions are not conditioned on one another."
+            )
+        },
+    )
 
     def __post_init__(self):
-        if self.task_name is not None:
-            self.task_name = self.task_name.lower()
-            if self.task_name not in task_to_keys.keys():
-                raise ValueError("Unknown task, you should pick one in " + ",".join(task_to_keys.keys()))
-        elif self.train_file is None or self.validation_file is None:
-            raise ValueError("Need either a GLUE task or a training/validation file.")
+        if self.dataset_name == "glue":
+            if self.task_name is not None:
+                self.task_name = self.task_name.lower()
+                if self.task_name not in task_to_keys.keys():
+                    raise ValueError("Unknown task, you should pick one in " + ",".join(task_to_keys.keys()))
+            elif self.train_file is None or self.validation_file is None:
+                raise ValueError("Need either a GLUE task or a training/validation file.")
+            else:
+                train_extension = self.train_file.split(".")[-1]
+                assert train_extension in ["csv", "json"], "`train_file` should be a csv or a json file."
+                validation_extension = self.validation_file.split(".")[-1]
+                assert (
+                    validation_extension == train_extension
+                ), "`validation_file` should have the same extension (csv or json) as `train_file`."
+        elif self.dataset_name in ["squad", "squad_v2"]:
+            if (
+            self.dataset_name is None
+            and self.train_file is None
+            and self.validation_file is None
+            and self.test_file is None
+            ):
+                raise ValueError("Need either a dataset name or a training/validation file/test_file.")
+            else:
+                if self.train_file is not None:
+                    extension = self.train_file.split(".")[-1]
+                    assert extension in ["csv", "json"], "`train_file` should be a csv or a json file."
+                if self.validation_file is not None:
+                    extension = self.validation_file.split(".")[-1]
+                    assert extension in ["csv", "json"], "`validation_file` should be a csv or a json file."
+                if self.test_file is not None:
+                    extension = self.test_file.split(".")[-1]
+                    assert extension in ["csv", "json"], "`test_file` should be a csv or a json file."
         else:
-            train_extension = self.train_file.split(".")[-1]
-            assert train_extension in ["csv", "json"], "`train_file` should be a csv or a json file."
-            validation_extension = self.validation_file.split(".")[-1]
-            assert (
-                validation_extension == train_extension
-            ), "`validation_file` should have the same extension (csv or json) as `train_file`."
+            raise ValueError(f"Wrong dataset name: {self.dataset_name}!")
+
 
 ############################### Model Arguments ################################
 @dataclass
@@ -146,6 +202,10 @@ class ModelArguments:
     reg_loss_wgt: Optional[float] = field(
         default=0.0,
         metadata={"help": "Regularization Loss Weight"},
+    )
+    masking_prob: Optional[float] = field(
+        default=0.0, #[TODO] 
+        metadata={"help": "Token Masking Probability"},
     )
 
 ############################## Training Arguments ##############################
@@ -207,9 +267,9 @@ class TrainingArguments(TrainingArguments):
         default="steps",
         metadata={"help": "How to save your model"}
     )
-    learning_rate: Optional[float] = field(
-        default=8e-4,
-        metadata={"help": "Learning rate"}
+    learning_rate: Optional[str] = field(
+        default="8e-4",
+        metadata={"help": "Learning rate. If `tuned`, then uses tuded hyperparametars, if float number it would be cast to float"}
     )
     warmup_steps: Optional[int] = field(
         default=100,
@@ -250,6 +310,10 @@ class TrainingArguments(TrainingArguments):
     lora_dropout: Optional[float] = field(
         default=None,
         metadata={"help": "Dropout of LoRA and LoRA-like PEFT adapters"}
+    )
+    cls_dropout: Optional[float] = field(
+        default=None,
+        metadata={"help": "cls drop out."}
     )
     optim: Optional[str] = field(
         default="adamw_torch",
