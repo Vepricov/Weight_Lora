@@ -1,0 +1,12 @@
+{
+    "squad": {
+        "LoRA": {"lr": 1e-3},
+        "WeightLoRA": {"lr": null},
+        "FatLoRA": {"lr": null}
+    },
+    "squad_v2": {
+        "LoRA": {"lr": 1e-3},
+        "WeightLoRA": {"lr": null},
+        "FatLoRA": {"lr": null}
+    }
+}

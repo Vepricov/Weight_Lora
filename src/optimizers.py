@@ -375,12 +375,12 @@ class FatAdamW(optim.Optimizer):
         super().__init__(params, defaults)
         self.k = num_adapters
         self.chosen_layers = list(range(num_adapters))
-        if lora_extention not in ["smart", "dummy"]:
-            raise ValueError("Only smart and dummy are available!")
+        if lora_extention not in ["smart", "dummy", "restart"]:
+            raise ValueError(f"Wrong lora_extention: {lora_extention}")
         self.lora_extention = lora_extention
         self.fat_step = fat_step
         self.max_fat_steps = max_fat_steps
-        self.R = None
+        self.R, self.R_mom, self.R_mom_sq = None, None, None
 
     @torch.no_grad()
     def step(self, closure: Callable = None):
@@ -435,32 +435,54 @@ class FatAdamW(optim.Optimizer):
                                               requires_grad=True,
                                               device=p.data.device)
                                 p.data = torch.concat([Q, (I - Q@Q.T)@N], dim=1)
+                                # Q_mom, self.R_mom = torch.linalg.qr(state["exp_avg"],
+                                #                                     mode="reduced")
+                                # N_mom = torch.rand_like(state["exp_avg"])
                                 # state["exp_avg"] = torch.concat(
-                            #     [state["exp_avg"], torch.zeros_like(add_A)], 
-                            #     dim=1
-                            # )
-                            # state["exp_avg_sq"] = torch.concat(
-                            #     [state["exp_avg_sq"], torch.zeros_like(add_A)], 
-                            #     dim=1
-                            # )
+                                #     [Q_mom, (I - Q_mom@Q_mom.T)@N_mom], 
+                                #     dim=1
+                                # )
+                                # Q_mom_sq, self.R_mom_sq = torch.linalg.qr(state["exp_avg_sq"],
+                                #                                           mode="reduced")
+                                # N_mom_sq = torch.rand_like(state["exp_avg_sq"])
+                                # state["exp_avg_sq"] = torch.concat(
+                                #     [Q_mom_sq, (I - Q_mom_sq@Q_mom_sq.T)@N_mom_sq], 
+                                #     dim=1
+                                # )
+                            elif self.lora_extention == "restart":
+                                N_1 = torch.rand_like(p.data, requires_grad=True)
+                                N_2 = torch.rand_like(p.data, requires_grad=True)
+                                p.data = torch.concat([N_1, N_2], dim=1)
+                            O = torch.zeros_like(state["exp_avg"])
+                            state["exp_avg"] = torch.concat( 
+                                [state["exp_avg"], O], dim=1
+                            )
+                            state["exp_avg_sq"] = torch.concat(
+                                [state["exp_avg_sq"], O], dim=1
+                            )
                         else: # lora_B
                             O = torch.zeros_like(p.data, requires_grad=True)
                             if self.lora_extention == "dummy":
                                 p.data = torch.concat([p.data, O], dim=0)
                             elif self.lora_extention == "smart":
                                 p.data = torch.concat([self.R @ p.data, O], dim=0)
-                            # state["exp_avg"] = torch.concat(
-                            #     [state["exp_avg"], torch.zeros_like(add_B)], 
-                            #     dim=0
-                            # )
-                            # state["exp_avg_sq"] = torch.concat(
-                            #     [state["exp_avg_sq"], torch.zeros_like(add_B)], 
-                            #     dim=0
-                            # )
-                        #print(i, p.data.shape, self.chosen_layers)
-                        state["exp_avg"] = torch.zeros_like(p)
-                        state["exp_avg_sq"] = torch.zeros_like(p)
-                        state["step"] = 0
+                                # state["exp_avg"] = torch.concat(
+                                #     [self.R_mom @ state["exp_avg"], O], 
+                                #     dim=0
+                                # )
+                                # state["exp_avg_sq"] = torch.concat(
+                                #     [self.R_mom_sq @ state["exp_avg_sq"], O], 
+                                #     dim=0
+                                # )
+                            elif self.lora_extention == "restart":
+                                p.data = torch.concat([O, O], dim=0)
+                            state["exp_avg"] = torch.concat( 
+                                [state["exp_avg"], O], dim=0
+                            )
+                            state["exp_avg_sq"] = torch.concat(
+                                [state["exp_avg_sq"], O], dim=0
+                            )
+                        #state["step"] = 0
                         continue
 
                     exp_avg.mul_(beta1).add_(grad, alpha=(1.0 - beta1))
