@@ -2,7 +2,6 @@ import random
 import torch
 import torch.nn as nn
 import numpy as np
-import logging
 
 def print_trainable_parameters(model, verbose=True):
     """
