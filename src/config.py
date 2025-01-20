@@ -1,6 +1,6 @@
-from typing import Optional, Union
+from typing import Optional
 from dataclasses import dataclass, field
-from transformers import TrainingArguments
+from transformers import Seq2SeqTrainingArguments
 from transformers.utils import check_min_version
 import peft
 
@@ -122,6 +122,55 @@ class DataTrainingArguments:
             )
         },
     )
+    val_max_target_length: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "The maximum total sequence length for validation target text after tokenization. Sequences longer "
+                "than this will be truncated, sequences shorter will be padded. Will default to `max_target_length`."
+                "This argument is also used to override the ``max_length`` param of ``model.generate``, which is used "
+                "during ``evaluate`` and ``predict``."
+            )
+        },
+    )
+    max_target_length: Optional[int] = field(
+        default=128,
+        metadata={
+            "help": (
+                "The maximum total sequence length for target text after tokenization. Sequences longer "
+                "than this will be truncated, sequences shorter will be padded."
+            )
+        },
+    )
+    source_prefix: Optional[str] = field(
+        default="", metadata={"help": "A prefix to add before every source text (useful for T5 models)."}
+    )
+    dataset_config: Optional[str] = field(
+        default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
+    )
+    max_source_length: Optional[int] = field(
+        default=1024,
+        metadata={
+            "help": (
+                "The maximum total input sequence length after tokenization. Sequences longer "
+                "than this will be truncated, sequences shorter will be padded."
+            )
+        },
+    )
+    text_column: Optional[str] = field(
+        default=None,
+        metadata={"help": "The name of the column in the datasets containing the full texts (for summarization)."},
+    )
+    summary_column: Optional[str] = field(
+        default=None,
+        metadata={"help": "The name of the column in the datasets containing the summaries (for summarization)."},
+    )
+    ignore_pad_token_for_loss: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to ignore the tokens corresponding to padded labels in the loss computation or not."
+        },
+    )
 
     def __post_init__(self):
         if self.dataset_name == "glue":
@@ -156,6 +205,19 @@ class DataTrainingArguments:
                 if self.test_file is not None:
                     extension = self.test_file.split(".")[-1]
                     assert extension in ["csv", "json"], "`test_file` should be a csv or a json file."
+        elif self.dataset_name in ["cnn_dailymail", "xsum"]:
+            if self.dataset_name is None and self.train_file is None and self.validation_file is None:
+                raise ValueError("Need either a dataset name or a training/validation file.")
+            else:
+                if self.train_file is not None:
+                    extension = self.train_file.split(".")[-1]
+                    assert extension in ["csv", "json"], "`train_file` should be a csv or a json file."
+                if self.validation_file is not None:
+                    extension = self.validation_file.split(".")[-1]
+                    assert extension in ["csv", "json"], "`validation_file` should be a csv or a json file."
+            if self.val_max_target_length is None:
+                self.val_max_target_length = self.max_target_length
+
         else:
             raise ValueError(f"Wrong dataset name: {self.dataset_name}!")
 
@@ -210,7 +272,7 @@ class ModelArguments:
 
 ############################## Training Arguments ##############################
 @dataclass
-class TrainingArguments(TrainingArguments):
+class TrainingArguments(Seq2SeqTrainingArguments):
     output_dir: str = field(
         default="./train_outputs",
         metadata={"help": "Folder to save output files"}
@@ -469,10 +531,10 @@ def get_peft_arguments(training_args):
     else:
         raise ValueError(f"Incorrect FT type {training_args.ft_strategy}!")
     
-    if "deberta" in training_args.model_name:
+    if training_args.model_name in ["microsoft/deberta-v3-base"]:
         peft_args.target_modules = ["query_proj", "key_proj", "value_proj",
                                     "intermediate.dence", "output.dence"]
-    elif ("llama", "mistralai") in training_args.model_name:
+    elif training_args.model_name in ["facebook/bart-large"]:
         peft_args.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
                                     "gate_proj", "up_proj", "down_proj"]
     else:

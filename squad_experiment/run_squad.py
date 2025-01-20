@@ -11,6 +11,8 @@ from src import (
     optimizers,
     utils
 )
+import warnings
+warnings.filterwarnings("ignore")
 
 def main():
     for i in range(torch.cuda.device_count()):
@@ -109,15 +111,14 @@ def main():
         )
     ############################### Wandb Saves ################################
     os.environ["WANDB_PROJECT"] = "SBER_LORA"
-    # run_name = f"{config.model_name} + {optimizer.__class__.__name__}"
     if training_args.ft_strategy in ["WeightLoRA", "RandLoRA"]:
         run_name = f"[{training_args.ft_strategy} k={training_args.k} r={training_args.lora_r}]"
     else:
         run_name = f"[{training_args.ft_strategy} r={training_args.lora_r}]"
-    run_name += f" {data_args.dataset_name}, lr={training_args.learning_rate}"
+    run_name += f" {data_args.dataset_name}"
     training_args.run_name = run_name
     training_args.output_dir = f"./squad_experiment/{training_args.output_dir}/{run_name}"
-    os.environ["WANDB_TAGS"] = f"TEST {data_args.dataset_name}"
+    os.environ["WANDB_TAGS"] = f"NEW {data_args.dataset_name}"
     if optimizer is not None:
         training_args.optimizer = optimizer.__class__.__name__
         training_args.scheduler = scheduler.__class__.__name__

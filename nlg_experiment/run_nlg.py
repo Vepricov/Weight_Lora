@@ -1,11 +1,11 @@
 import torch, gc, os, sys, wandb, peft, json
 from transformers import (
-    Trainer,
     HfArgumentParser,
     get_scheduler,
+    Seq2SeqTrainer
 )
 
-from utils_glue import glue_preprocess
+from utils_nlg import nlg_prepocess
 sys.path.append(os.getcwd())
 from src import (
     config,
@@ -26,10 +26,10 @@ def main():
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     utils.set_seed(training_args.seed)
     ################# Model, Tokenizer and Dataset Downloading #################
-    (train_dataset, eval_dataset, test_dataset, datasets, data_collator, 
-     compute_metrics, model, tokenizer) = glue_preprocess(data_args, 
-                                                          training_args, 
-                                                          model_args)
+    (train_dataset, eval_dataset, test_dataset, data_collator, 
+     compute_metrics, model, tokenizer) = nlg_prepocess(data_args, 
+                                                        training_args, 
+                                                        model_args)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
         model.config.pad_token_id = model.config.eos_token_id
@@ -59,10 +59,11 @@ def main():
     ######################### Optimizer and Scheduler ##########################
     optimizer, scheduler = None, None
     if "tuned" in [training_args.learning_rate]: # [TODO] add more tuned params
-        f_name = "./glue_experiment/tuned_params.json"
+        f_name = "./nlg_experiment/tuned_params.json"
         with open(f_name) as f:
             tuned_params = json.load(f)
-        lr = tuned_params[data_args.task_name][training_args.ft_strategy]["lr"]
+        
+        lr = tuned_params[data_args.dataset_name][training_args.ft_strategy]["lr"]
         training_args.learning_rate = lr
     else:
         training_args.learning_rate = float(training_args.learning_rate)
@@ -113,10 +114,10 @@ def main():
         run_name = f"[{training_args.ft_strategy} k={training_args.k} r={training_args.lora_r}]"
     else:
         run_name = f"[{training_args.ft_strategy} r={training_args.lora_r}]"
-    run_name += f" {data_args.task_name}, lr={training_args.learning_rate}"
+    run_name += f" {data_args.dataset_name}"
     training_args.run_name = run_name
-    training_args.output_dir = f"./glue_experiment/{training_args.output_dir}/{run_name}"
-    os.environ["WANDB_TAGS"] = f"TEST GLUE {data_args.task_name}"
+    training_args.output_dir = f"./nlg_experiment/{training_args.output_dir}/{run_name}"
+    os.environ["WANDB_TAGS"] = f"{data_args.dataset_name}"
     if optimizer is not None:
         training_args.optimizer = optimizer.__class__.__name__
         training_args.scheduler = scheduler.__class__.__name__
@@ -127,15 +128,14 @@ def main():
     training_args.tsk_name = data_args.task_name
     ############################# Training #####################################
     print("$"*30, f" {run_name} ", "$"*30)
-    trainer=Trainer(
+    trainer = Seq2SeqTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
-        eval_dataset=eval_dataset if training_args.do_evaluate else None,
-        compute_metrics=compute_metrics,
+        eval_dataset=eval_dataset if training_args.do_eval else None,
         tokenizer=tokenizer,
         data_collator=data_collator,
-        optimizers=[optimizer, scheduler]
+        compute_metrics=compute_metrics if training_args.predict_with_generate else None,
     )
 
     if training_args.do_train:
@@ -165,24 +165,23 @@ def main():
         trainer.log_metrics("train", train_metrics)
         trainer.save_metrics("train", train_metrics)
         trainer.save_state()
-
+        
         if "wandb" in training_args.report_to:
             wandb.config.update(train_metrics, allow_val_change=True)
     ################################ Evaluation ################################
     if training_args.do_evaluate:
-        # Loop to handle MNLI double evaluation (matched, mis-matched)
-        tasks = [data_args.task_name]
-        eval_datasets = [eval_dataset]
-        if data_args.task_name == "mnli":
-            tasks.append("mnli-mm")
-            eval_datasets.append(datasets["validation_mismatched"])
+        max_length = (
+            training_args.generation_max_length
+            if training_args.generation_max_length is not None
+            else data_args.val_max_target_length
+        )
+        num_beams = data_args.num_beams if data_args.num_beams is not None else training_args.generation_num_beams
+        eval_metrics = trainer.evaluate(max_length=max_length, num_beams=num_beams, metric_key_prefix="eval")
+        max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+        eval_metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
 
-        for eval_dataset, task in zip(eval_datasets, tasks):
-            eval_metrics = trainer.evaluate(eval_dataset=eval_dataset)
-            max_val_samples = data_args.max_val_samples if data_args.max_val_samples is not None else len(eval_dataset)
-            eval_metrics["eval_samples"] = min(max_val_samples, len(eval_dataset))
-            trainer.log_metrics("Eval_%s"%task, eval_metrics)
-            trainer.save_metrics("Eval_%s"%task, eval_metrics)
+        trainer.log_metrics("eval", eval_metrics)
+        trainer.save_metrics("eval", eval_metrics)
             
         eval_metrics["eval_memory_gb"] = torch.cuda.max_memory_allocated() / 2**30
         if "eval_runtime" in eval_metrics.keys():
