@@ -1,5 +1,4 @@
-import random
-import torch
+import random, torch, peft
 import torch.nn as nn
 import numpy as np
 
@@ -60,8 +59,8 @@ def count_atapters(model, peft_type):
     num_adapters = None
     if adapter_name is not None:
         num_adapters = 0
-        for name, _ in model.named_parameters():
-            if adapter_name in name:
+        for name, param in model.named_parameters():
+            if adapter_name in name and param.requires_grad:
                 num_adapters += 1
     
     return num_adapters
@@ -76,7 +75,72 @@ def apply_rand_weight_lora(model, n, k):
                 param.data = torch.tensor([0.])
             i += 1
 
-################################# Memory staff #################################
+def get_peft_arguments(training_args):
+    if training_args.ft_strategy == "LoRA":
+        peft_args = peft.LoraConfig(
+            r                   = training_args.lora_r,
+            lora_alpha          = training_args.lora_alpha,
+            lora_dropout        = training_args.lora_dropout
+        )
+    elif training_args.ft_strategy == "LoKR":
+        peft_args = peft.LoKrConfig(
+            r                   = training_args.lora_r,
+            lora_alpha          = training_args.lora_alpha,
+            lora_dropout        = training_args.lora_dropout
+        )
+    elif training_args.ft_strategy == "LoHA":
+        peft_args = peft.LoHaConfig(
+            r                   = training_args.lora_r,
+            lora_alpha          = training_args.lora_alpha,
+            lora_dropout        = training_args.lora_dropout
+        )
+    elif training_args.ft_strategy == "VERA":
+        peft_args = peft.VeraConfig(
+            r                   = training_args.lora_r,
+            vera_dropout        = training_args.lora_dropout
+        )
+    elif training_args.ft_strategy == "ADALoRA":
+        peft_args = peft.AdaLoraConfig(
+            target_r            = training_args.lora_r,
+        )
+    elif training_args.ft_strategy == "DoRA":
+        peft_args = peft.LoraConfig(
+            r                   = training_args.lora_r,
+            lora_alpha          = training_args.lora_alpha,
+            lora_dropout        = training_args.lora_dropout,
+            use_dora            = True,
+        )
+    elif training_args.ft_strategy == "rsLoRA":
+        peft_args = peft.LoraConfig(
+            r                   = training_args.lora_r,
+            lora_alpha          = training_args.lora_alpha,
+            lora_dropout        = training_args.lora_dropout,
+            use_rslora          = True,
+        )
+    elif training_args.ft_strategy == "WeightLoRA":
+        peft_args = peft.WeightLoraConfig(
+            r                   = training_args.lora_r,
+            lora_alpha          = training_args.lora_alpha,
+            lora_dropout        = training_args.lora_dropout,
+        )
+    elif training_args.ft_strategy == "Full":
+        return None
+    else:
+        raise ValueError(f"Incorrect FT type {training_args.ft_strategy}!")
+
+    if training_args.model_name in ["microsoft/deberta-v3-base"]:
+        # peft_args.target_modules = ["query_proj", "key_proj", "value_proj",
+        #                             "intermediate.dence", "output.dence"]
+        peft_args.target_modules = "all-linear"
+    elif training_args.model_name in ["facebook/bart-large"]:
+        # peft_args.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
+        #                             "gate_proj", "up_proj", "down_proj", 
+        #                             "fc1", "fc2"]
+        peft_args.target_modules = "all-linear"
+    else:
+        raise ValueError(f"Pass target_modules to your model {training_args.model_name}")
+    return peft_args
+
 class AdapterLayer(nn.Module):
     """Wraps a linear layer with LoRA-like adapter. Wraps an existing OPT linear layer"""
     def __init__(self, module: nn.Linear, r: int = 8):
@@ -91,27 +155,8 @@ class AdapterLayer(nn.Module):
                                 dtype=module.weight.dtype,
                                 device=module.weight.device)
         self.w = torch.tensor(1., requires_grad=True)
-        # nn.init.kaiming_uniform_(self.adapter_A, a=5 ** 0.5)
-        #self.adapter_B = nn.Parameter(torch.zeros(rank, module.out_features, device=module.weight.device))
 
     def forward(self, x):
-        # Apply self.module and LoRA adapter, return the sum (self.module outputs + adapter outputs)
         frwd_module = self.module(x)
         frwd_adapter = self.w * self.lora_B(self.lora_A(x))
         return frwd_module + frwd_adapter
-    
-# num_peft_adapters = 0
-# for name, param in model.named_parameters():
-# # if name not in chosen_layers:
-# #     param.requires_grad = False
-#     param.requires_grad = False
-# for i in range(12):
-#     if num_peft_adapters < training_args.k:
-#         model.deberta.encoder.layer[i].attention.self.query_proj = AdapterLayer(model.deberta.encoder.layer[i].attention.self.query_proj, r = training_args.lora_r)
-#         num_peft_adapters += 1
-#     if num_peft_adapters < training_args.k:
-#         model.deberta.encoder.layer[i].attention.self.key_proj = AdapterLayer(model.deberta.encoder.layer[i].attention.self.key_proj, r = training_args.lora_r)
-#         num_peft_adapters += 1
-#     if num_peft_adapters < training_args.k:
-#         model.deberta.encoder.layer[i].attention.self.value_proj = AdapterLayer(model.deberta.encoder.layer[i].attention.self.value_proj, r = training_args.lora_r)
-#         num_peft_adapters += 1

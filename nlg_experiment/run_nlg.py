@@ -36,7 +36,7 @@ def main():
     ############################### PEFT Adapters ##############################
     all_params_before_peft, _ = utils.print_trainable_parameters(model, verbose=False)
     training_args.model_name = model_args.model_name_or_path         # for wandb
-    peft_args = config.get_peft_arguments(training_args)
+    peft_args = utils.get_peft_arguments(training_args)
     if peft_args is not None:
         model = peft.get_peft_model(model, peft_args)
     num_peft_adapters = utils.count_atapters(model, training_args.ft_strategy)
@@ -44,13 +44,6 @@ def main():
         training_args.ft_strategy = "RandLoRA"
         utils.apply_rand_weight_lora(model, num_peft_adapters, training_args.k)
     training_args.label_names = ["labels"] # peft and compute_metrics() problem
-    ############################### Wandb Saves ################################
-    training_args.all_params, training_args.trainable_params = \
-        utils.print_trainable_parameters(model)
-    training_args.num_peft_adapters = num_peft_adapters
-    training_args.peft_params = training_args.all_params - all_params_before_peft
-    training_args.train_proportion = training_args.trainable_params / training_args.all_params * 100 
-    training_args.peft_proportion = training_args.peft_params / training_args.all_params * 100 
     ft_strategy = training_args.ft_strategy
     if ft_strategy == "WeightLoRA":
         if training_args.use_fat: ft_strategy = "FatLoRA"
@@ -109,12 +102,18 @@ def main():
             num_training_steps=training_args.max_steps
         )
     ############################### Wandb Saves ################################
+    training_args.all_params, training_args.trainable_params = \
+        utils.print_trainable_parameters(model)
+    training_args.num_peft_adapters = num_peft_adapters
+    training_args.peft_params = training_args.all_params - all_params_before_peft
+    training_args.train_proportion = training_args.trainable_params / training_args.all_params * 100 
+    training_args.peft_proportion = training_args.peft_params / training_args.all_params * 100 
     os.environ["WANDB_PROJECT"] = "SBER_LORA"
     if training_args.ft_strategy in ["WeightLoRA", "RandLoRA"]:
         run_name = f"[{training_args.ft_strategy} k={training_args.k} r={training_args.lora_r}]"
     else:
         run_name = f"[{training_args.ft_strategy} r={training_args.lora_r}]"
-    run_name += f" {data_args.dataset_name}"
+    run_name += f" lr={training_args.learning_rate} {data_args.dataset_name}"
     training_args.run_name = run_name
     training_args.output_dir = f"./nlg_experiment/{training_args.output_dir}/{run_name}"
     os.environ["WANDB_TAGS"] = f"{data_args.dataset_name}"

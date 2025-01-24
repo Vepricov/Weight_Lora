@@ -36,7 +36,7 @@ def main():
     ############################### PEFT Adapters ##############################
     all_params_before_peft, _ = utils.print_trainable_parameters(model, verbose=False)
     training_args.model_name = model_args.model_name_or_path         # for wandb
-    peft_args = config.get_peft_arguments(training_args)
+    peft_args = utils.get_peft_arguments(training_args)
     if peft_args is not None:
         model = peft.get_peft_model(model, peft_args)
     num_peft_adapters = utils.count_atapters(model, training_args.ft_strategy)

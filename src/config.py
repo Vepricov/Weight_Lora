@@ -2,12 +2,11 @@ from typing import Optional
 from dataclasses import dataclass, field
 from transformers import Seq2SeqTrainingArguments
 from transformers.utils import check_min_version
-import peft
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.4.0")
 
-task_to_keys = {
+task_to_keys_glue = {
     "cola": ("sentence", None),
     "mnli": ("premise", "hypothesis"),
     "mrpc": ("sentence1", "sentence2"),
@@ -35,7 +34,7 @@ class DataTrainingArguments:
     )
     task_name: Optional[str] = field(
         default=None,
-        metadata={"help": "The name of the task to train on: " + ", ".join(task_to_keys.keys())},
+        metadata={"help": "The name of the task to train on: " + ", ".join(task_to_keys_glue.keys())},
     )
     max_seq_length: int = field(
         default=128,
@@ -176,8 +175,8 @@ class DataTrainingArguments:
         if self.dataset_name == "glue":
             if self.task_name is not None:
                 self.task_name = self.task_name.lower()
-                if self.task_name not in task_to_keys.keys():
-                    raise ValueError("Unknown task, you should pick one in " + ",".join(task_to_keys.keys()))
+                if self.task_name not in task_to_keys_glue.keys():
+                    raise ValueError("Unknown task, you should pick one in " + ",".join(task_to_keys_glue.keys()))
             elif self.train_file is None or self.validation_file is None:
                 raise ValueError("Need either a GLUE task or a training/validation file.")
             else:
@@ -430,7 +429,7 @@ class TrainingArguments(Seq2SeqTrainingArguments):
         metadata={"help": "Number active adapters for WeightLora. Must be less or equal to num_peft_adapters."}
     )
     learning_rate_w: Optional[float] = field(
-        default=10.,
+        default=None,
         metadata={"help": "Learning rate for weights in Weight LoRA"}
     )
     compression_name: Optional[str] = field(
@@ -469,75 +468,3 @@ class TrainingArguments(Seq2SeqTrainingArguments):
         default=None,
         metadata={"help": "How to extednd adapters in FatLoRA. Can be smart ot dummy"}
     )
-
-################################ PEFT Arguments ################################
-def get_peft_arguments(training_args):
-    if training_args.ft_strategy == "LoRA":
-        peft_args = peft.LoraConfig(
-            r                   = training_args.lora_r,
-            lora_alpha          = training_args.lora_alpha,
-            lora_dropout        = training_args.lora_dropout
-        )
-    elif training_args.ft_strategy == "LoKR":
-        peft_args = peft.LoKrConfig(
-            r                   = training_args.lora_r,
-            lora_alpha          = training_args.lora_alpha,
-            lora_dropout        = training_args.lora_dropout
-        )
-    elif training_args.ft_strategy == "LoHA":
-        peft_args = peft.LoHaConfig(
-            r                   = training_args.lora_r,
-            lora_alpha          = training_args.lora_alpha,
-            lora_dropout        = training_args.lora_dropout
-        )
-    elif training_args.ft_strategy == "VERA":
-        peft_args = peft.VeraConfig(
-            r                   = training_args.lora_r,
-            vera_dropout        = training_args.lora_dropout
-        )
-    elif training_args.ft_strategy == "ADALoRA":
-        peft_args = peft.AdaLoraConfig(
-            target_r            = training_args.lora_r,
-        )
-    elif training_args.ft_strategy == "BOFT":
-        # peft_args = peft.BOFTConfig(
-        #     boft_block_size     = 8,
-        #     bias                = "none",
-        #     boft_dropout        = 0.05
-        # )
-        raise NotImplementedError("BOFT currently is not available :(")
-    elif training_args.ft_strategy == "DoRA":
-        peft_args = peft.LoraConfig(
-            r                   = training_args.lora_r,
-            lora_alpha          = training_args.lora_alpha,
-            lora_dropout        = training_args.lora_dropout,
-            use_dora            = True,
-        )
-    elif training_args.ft_strategy == "rsLoRA":
-        peft_args = peft.LoraConfig(
-            r                   = training_args.lora_r,
-            lora_alpha          = training_args.lora_alpha,
-            lora_dropout        = training_args.lora_dropout,
-            use_rslora          = True,
-        )
-    elif training_args.ft_strategy == "WeightLoRA":
-        peft_args = peft.WeightLoraConfig(
-            r                   = training_args.lora_r,
-            lora_alpha          = training_args.lora_alpha,
-            lora_dropout        = training_args.lora_dropout,
-        )
-    elif training_args.ft_strategy == "Full":
-        return None
-    else:
-        raise ValueError(f"Incorrect FT type {training_args.ft_strategy}!")
-    
-    if training_args.model_name in ["microsoft/deberta-v3-base"]:
-        peft_args.target_modules = ["query_proj", "key_proj", "value_proj",
-                                    "intermediate.dence", "output.dence"]
-    elif training_args.model_name in ["facebook/bart-large"]:
-        peft_args.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
-                                    "gate_proj", "up_proj", "down_proj"]
-    else:
-        raise ValueError(f"Pass target_modules to your model {training_args.model_name}")
-    return peft_args
-################################################################################
